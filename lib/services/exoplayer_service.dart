@@ -307,6 +307,9 @@ class ExoPlayerService extends ChangeNotifier {
         // Set source first
         await _channel.invokeMethod('setDashSource', {'url': directUrl});
         
+        // Update notification with metadata
+        await _updateNotification(song);
+        
         // Clear loading IMMEDIATELY after source is set, BEFORE play()
         // This ensures UI is responsive without waiting for events
         _isLoading = false;
@@ -336,6 +339,9 @@ class ExoPlayerService extends ChangeNotifier {
         String audioUrl = manifest['urls'][0];
         
         debugPrint('🎵 Direct audio URL: $audioUrl');
+        
+        // Update notification with metadata
+        await _updateNotification(song);
         
         // Set source first
         await setDashSource(audioUrl);
@@ -427,6 +433,9 @@ class ExoPlayerService extends ChangeNotifier {
       
       _loadingStatus = 'Starting Hi-Res stream...';
       notifyListeners();
+      
+      // Update notification with metadata
+      await _updateNotification(song);
       
       // Use ExoPlayer to stream directly from DASH manifest
       // ExoPlayer will fetch segments from Tidal CDN automatically
@@ -649,6 +658,19 @@ class ExoPlayerService extends ChangeNotifier {
     final minutes = d.inMinutes;
     final seconds = d.inSeconds % 60;
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _updateNotification(Song song) async {
+    try {
+      await _channel.invokeMethod('updateMetadata', {
+        'title': song.title,
+        'artist': song.artist,
+        'albumCover': song.albumCover ?? '',
+      });
+      debugPrint('🔔 Notification updated: ${song.title} - ${song.artist}');
+    } catch (e) {
+      debugPrint('❌ Error updating notification: $e');
+    }
   }
 
   @override

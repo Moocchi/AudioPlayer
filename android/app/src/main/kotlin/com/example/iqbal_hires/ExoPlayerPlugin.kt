@@ -1,6 +1,9 @@
 package com.example.iqbal_hires
 
+import android.content.ComponentName
+import android.content.Intent
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.C
@@ -16,6 +19,8 @@ import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.dash.manifest.DashManifest
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionToken
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -40,6 +45,14 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
         context = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "exoplayer")
         channel.setMethodCallHandler(this)
+        
+        // Start PlaybackService for media notification as foreground service
+        val serviceIntent = Intent(context, PlaybackService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(serviceIntent)
+        } else {
+            context.startService(serviceIntent)
+        }
         
         eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "exoplayer/events")
         eventChannel.setStreamHandler(object : EventChannel.StreamHandler {
@@ -121,6 +134,13 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
             "getManifestInfo" -> {
                 result.success(getCurrentManifestInfo())
             }
+            "updateMetadata" -> {
+                val title = call.argument<String>("title") ?: ""
+                val artist = call.argument<String>("artist") ?: ""
+                val albumCover = call.argument<String>("albumCover") ?: ""
+                updateNotification(title, artist, albumCover)
+                result.success(null)
+            }
             else -> {
                 result.notImplemented()
             }
@@ -153,6 +173,9 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
                         
                         android.util.Log.d("ExoPlayer", "✅ ExoPlayer configured: Default renderer, Hi-Res passthrough enabled")
                     }
+                
+                // Pass player to PlaybackService for notifications
+                PlaybackService.instance?.setPlayer(exoPlayer!!)
             }
 
             // Check if it's a file URL or HTTP URL
@@ -380,7 +403,14 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
-        exoPlayer?.release()
+        // Don't release player here - PlaybackService manages it
+        exoPlayer?.removeListener(this)
         exoPlayer = null
+    }
+
+    private fun updateNotification(title: String, artist: String, albumCover: String) {
+        // Update metadata in PlaybackService - this will trigger automatic notification
+        PlaybackService.instance?.updateMetadata(title, artist, albumCover)
+        android.util.Log.d("ExoPlayer", "🔔 Notification updated via PlaybackService: $title - $artist")
     }
 }
