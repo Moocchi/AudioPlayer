@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../services/audio_service.dart';
 import '../theme/app_theme.dart';
+import 'hires_badge.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
@@ -19,102 +20,145 @@ class SongTile extends StatelessWidget {
     this.showDuration = true,
   });
 
+  String _estimateFileSize() {
+    // Estimate file size based on quality and duration
+    // Hi-Res: ~5-6 MB per minute (24-bit/96kHz FLAC)
+    // Lossless: ~3-4 MB per minute (16-bit/44.1kHz FLAC)
+    double mbPerMinute = song.isHiRes ? 5.5 : 3.5;
+    double minutes = song.duration / 60.0;
+    double sizeMB = mbPerMinute * minutes;
+    
+    if (sizeMB >= 100) {
+      return '${sizeMB.toStringAsFixed(0)} MB';
+    } else if (sizeMB >= 10) {
+      return '${sizeMB.toStringAsFixed(1)} MB';
+    } else {
+      return '${sizeMB.toStringAsFixed(1)} MB';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return InkWell(
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (index != null)
-            SizedBox(
-              width: 24,
-              child: Text(
-                '${index! + 1}',
-                style: TextStyle(
-                  color: isPlaying ? AppTheme.primary : AppTheme.textSecondary,
-                  fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            // Index number
+            if (index != null)
+              SizedBox(
+                width: 24,
+                child: Text(
+                  '${index! + 1}',
+                  style: TextStyle(
+                    color: isPlaying ? AppTheme.primary : AppTheme.textSecondary,
+                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                  ),
                 ),
               ),
+            if (index != null) const SizedBox(width: 8),
+            
+            // Album cover
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: song.albumCover != null
+                  ? Image.network(
+                      song.albumCover!,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _placeholder(),
+                    )
+                  : _placeholder(),
             ),
-          const SizedBox(width: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: song.albumCover != null
-                ? Image.network(
-                    song.albumCover!,
-                    width: 50,
-                    height: 50,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _placeholder(),
-                  )
-                : _placeholder(),
-          ),
-        ],
-      ),
-      title: Text(
-        song.title,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: isPlaying ? AppTheme.primary : AppTheme.textPrimary,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Row(
-        children: [
-          if (song.isHiRes) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                gradient: AppTheme.primaryGradient,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'Hi-Res',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
+            const SizedBox(width: 12),
+            
+            // Song info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title row with duration
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          song.title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            color: isPlaying ? AppTheme.primary : AppTheme.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (showDuration) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          song.durationFormatted,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isPlaying ? AppTheme.primary : AppTheme.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  
+                  // Badge + Artist row
+                  Row(
+                    children: [
+                      if (song.isHiRes) ...[
+                        const AnimatedHiResBadge(),
+                        const SizedBox(width: 6),
+                      ] else if (song.isLossless) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1DB954),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Lossless',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Expanded(
+                        child: Text(
+                          song.artist,
+                          style: AppTheme.caption,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  
+                  // Size info
+                  Text(
+                    '${song.isHiRes ? "24-bit • " : "16-bit • "}${_estimateFileSize()}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textSecondary.withOpacity(0.7),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 6),
-          ] else if (song.isLossless) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1DB954),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'Lossless',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
           ],
-          Expanded(
-            child: Text(
-              song.artist,
-              style: AppTheme.caption,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
+        ),
       ),
-      trailing: showDuration
-          ? Text(
-              song.durationFormatted,
-              style: AppTheme.caption,
-            )
-          : null,
     );
   }
 

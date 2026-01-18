@@ -3,9 +3,20 @@ import '../models/song.dart';
 import '../services/exoplayer_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/queue_sheet.dart';
+import '../widgets/hires_badge.dart';
 
-class PlayerScreen extends StatelessWidget {
+class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
+
+  @override
+  State<PlayerScreen> createState() => _PlayerScreenState();
+}
+
+class _PlayerScreenState extends State<PlayerScreen> {
+  bool _isDragging = false;
+  double _dragValue = 0.0;
+  
+  static const double albumSize = 290;
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +36,7 @@ class PlayerScreen extends StatelessWidget {
           backgroundColor: AppTheme.background,
           body: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 children: [
                   // Header
@@ -34,30 +45,60 @@ class PlayerScreen extends StatelessWidget {
                   const SizedBox(height: 20),
                   
                   // Album art - fixed size, square
-                  _buildAlbumArt(song),
+                  _buildAlbumArt(song, albumSize),
                   
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 32),
                   
                   // Song info
-                  _buildSongInfo(song),
+                  _buildSongInfo(song, albumSize),
                   
                   const SizedBox(height: 24),
                   
                   // Progress slider
                   _buildProgressSlider(audio),
                   
-                  const Spacer(),
+                  const SizedBox(height: 16),
                   
                   // Controls
                   _buildControls(audio),
                   
-                  const SizedBox(height: 32),
+                  const Spacer(),
+                  
+                  // Tab bar (disabled for now)
+                  _buildTabBar(),
+                  
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildTab('Antrean', false),
+        _buildTab('Lirik', false),
+        _buildTab('About', false),
+      ],
+    );
+  }
+
+  Widget _buildTab(String label, bool enabled) {
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.4,
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: AppTheme.textSecondary,
+        ),
+      ),
     );
   }
 
@@ -71,19 +112,16 @@ class PlayerScreen extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
           ),
           const Expanded(
-            child: Column(
-              children: [
-                Text('NOW PLAYING', style: TextStyle(
+            child: Center(
+              child: Text(
+                'NOW PLAYING',
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textSecondary,
                   letterSpacing: 1,
-                )),
-                Text('My music list', style: TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.primary,
-                )),
-              ],
+                ),
+              ),
             ),
           ),
           IconButton(
@@ -95,13 +133,13 @@ class PlayerScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAlbumArt(Song song) {
+  Widget _buildAlbumArt(Song song, double albumSize) {
     return Center(
       child: Hero(
         tag: 'album_art_${song.id}',
         child: Container(
-          width: 260,
-          height: 260,
+          width: albumSize,
+          height: albumSize,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
@@ -133,60 +171,59 @@ class PlayerScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSongInfo(Song song) {
-    return Column(
-      children: [
-        // Quality badge
-        if (song.isHiRes) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              gradient: AppTheme.primaryGradient,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Text(
-              'Hi-Res 24bit',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 11,
+  Widget _buildSongInfo(Song song, double albumSize) {
+    return Center(
+      child: SizedBox(
+        width: albumSize,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (song.isHiRes) ...[
+              const AnimatedHiResBadge(),
+              const SizedBox(height: 12),
+            ] else if (song.isLossless) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1DB954),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Lossless',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            Text(
+              song.title,
+              style: AppTheme.heading1.copyWith(
+                fontSize: 22,
                 fontWeight: FontWeight.bold,
               ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-          ),
-        ] else if (song.isLossless) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1DB954),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Text(
-              'Lossless 16bit',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
+
+            const SizedBox(height: 4),
+
+            Text(
+              song.artist,
+              style: AppTheme.caption.copyWith(
+                fontSize: 16,
+                color: AppTheme.textSecondary,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        // Title
-        Text(
-          song.title,
-          style: AppTheme.heading1.copyWith(fontSize: 22),
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+          ],
         ),
-        const SizedBox(height: 6),
-        // Artist
-        Text(
-          song.artist,
-          style: AppTheme.caption.copyWith(fontSize: 15),
-          textAlign: TextAlign.center,
-        ),
-      ],
+      ),
     );
   }
 
@@ -194,15 +231,74 @@ class PlayerScreen extends StatelessWidget {
     return StreamBuilder<Duration>(
       stream: audio.positionStream,
       builder: (context, snapshot) {
-        final position = snapshot.data ?? Duration.zero;
         final duration = audio.duration;
-        final progress = duration.inMilliseconds > 0
-            ? position.inMilliseconds / duration.inMilliseconds
-            : 0.0;
+        
+        // Safety check for zero duration
+        if (duration.inMilliseconds <= 0) {
+          return Column(
+            children: [
+              SliderTheme(
+                data: SliderThemeData(
+                  trackHeight: 4,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                  activeTrackColor: AppTheme.primary,
+                  inactiveTrackColor: AppTheme.divider,
+                  thumbColor: AppTheme.primary,
+                  overlayColor: AppTheme.primary.withOpacity(0.2),
+                ),
+                child: const Slider(
+                  value: 0.0,
+                  onChanged: null,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '0:00',
+                      style: AppTheme.caption.copyWith(fontSize: 12),
+                    ),
+                    if (audio.isLoading)
+                      Text(
+                        audio.loadingStatus,
+                        style: AppTheme.caption.copyWith(
+                          color: AppTheme.primary,
+                          fontSize: 12,
+                        ),
+                      )
+                    else
+                      const SizedBox.shrink(),
+                    Text(
+                      '0:00',
+                      style: AppTheme.caption.copyWith(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+        
+        // Get position from stream if not dragging, otherwise use drag value
+        final streamPosition = snapshot.data ?? Duration.zero;
+        final currentPosition = _isDragging
+            ? Duration(
+                milliseconds: (_dragValue * duration.inMilliseconds).round(),
+              )
+            : streamPosition;
+        
+        // Calculate slider value
+        final sliderValue = _isDragging
+            ? _dragValue
+            : (streamPosition.inMilliseconds / duration.inMilliseconds)
+                .clamp(0.0, 1.0);
 
         return Column(
           children: [
-            // Slider
+            // Slider - drag updates visual, only seek on release
             SliderTheme(
               data: SliderThemeData(
                 trackHeight: 4,
@@ -214,23 +310,38 @@ class PlayerScreen extends StatelessWidget {
                 overlayColor: AppTheme.primary.withOpacity(0.2),
               ),
               child: Slider(
-                value: progress.clamp(0.0, 1.0),
+                value: sliderValue,
                 onChanged: (value) {
+                  // Update UI during drag without seeking
+                  setState(() {
+                    _isDragging = true;
+                    _dragValue = value;
+                  });
+                },
+                onChangeEnd: (value) async {
+                  // Only seek when user releases slider
                   final newPosition = Duration(
                     milliseconds: (value * duration.inMilliseconds).round(),
                   );
-                  audio.seek(newPosition);
+                  await audio.seek(newPosition);
+                  
+                  // Resume normal stream updates immediately (no delay)
+                  if (mounted) {
+                    setState(() {
+                      _isDragging = false;
+                    });
+                  }
                 },
               ),
             ),
-            // Time labels
+            // Time labels - update in real-time including during drag
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    _formatDuration(position),
+                    _formatDuration(currentPosition),
                     style: AppTheme.caption.copyWith(fontSize: 12),
                   ),
                   if (audio.isLoading)
@@ -240,7 +351,9 @@ class PlayerScreen extends StatelessWidget {
                         color: AppTheme.primary,
                         fontSize: 12,
                       ),
-                    ),
+                    )
+                  else
+                    const SizedBox.shrink(),
                   Text(
                     _formatDuration(duration),
                     style: AppTheme.caption.copyWith(fontSize: 12),
@@ -272,12 +385,19 @@ class PlayerScreen extends StatelessWidget {
         ),
         // Play/Pause button
         GestureDetector(
-          onTap: audio.isLoading ? null : audio.togglePlayPause,
+          onTap: () {
+            debugPrint('🔘 BUTTON TAPPED | isPlaying=${audio.isPlaying} | isLoading=${audio.isLoading}');
+            if (audio.isLoading && !audio.isPlaying) {
+              debugPrint('🚫 Button disabled (loading && !playing)');
+              return;
+            }
+            audio.togglePlayPause();
+          },
           child: Container(
             width: 64,
             height: 64,
             decoration: AppTheme.gradientButtonDecoration,
-            child: audio.isLoading
+            child: audio.isLoading && !audio.isPlaying
                 ? const Padding(
                     padding: EdgeInsets.all(18),
                     child: CircularProgressIndicator(

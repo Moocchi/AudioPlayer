@@ -3,6 +3,7 @@ import '../models/song.dart';
 import '../services/exoplayer_service.dart';
 import '../theme/app_theme.dart';
 import '../screens/player_screen.dart';
+import 'hires_badge.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -95,21 +96,7 @@ class MiniPlayer extends StatelessWidget {
                             Row(
                               children: [
                                 if (song.isHiRes) ...[
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      gradient: AppTheme.primaryGradient,
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                    child: const Text(
-                                      'Hi-Res',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
+                                  const AnimatedHiResBadge(),
                                   const SizedBox(width: 4),
                                 ] else if (song.isLossless) ...[
                                   Container(

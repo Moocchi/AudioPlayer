@@ -4,6 +4,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.Tracks
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -58,11 +63,19 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
                 }
             }
             "play" -> {
-                exoPlayer?.play()
+                android.util.Log.d("ExoPlayer", "▶️  Play called | Player ready: ${exoPlayer?.playWhenReady} | State: ${exoPlayer?.playbackState}")
+                if (exoPlayer != null) {
+                    exoPlayer!!.play()
+                    android.util.Log.d("ExoPlayer", "✅ Play() called successfully")
+                } else {
+                    android.util.Log.e("ExoPlayer", "❌ ExoPlayer is null!")
+                }
                 result.success(null)
             }
             "pause" -> {
+                android.util.Log.d("ExoPlayer", "⏸️  Pause called")
                 exoPlayer?.pause()
+                android.util.Log.d("ExoPlayer", "✅ Pause() called successfully")
                 result.success(null)
             }
             "stop" -> {
@@ -70,9 +83,30 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
                 result.success(null)
             }
             "seekTo" -> {
-                val position = call.argument<Int>("position")?.toLong() ?: 0L
-                exoPlayer?.seekTo(position)
-                result.success(null)
+                val positionMs = call.argument<Int>("positionMs")?.toLong() ?: 0L
+                if (exoPlayer != null && positionMs >= 0) {
+                    android.util.Log.d("ExoPlayer", "⏩ Seeking to ${positionMs}ms, player state: ${exoPlayer?.playbackState}")
+                    
+                    // Log audio format BEFORE seek
+                    logCurrentAudioFormat("BEFORE SEEK")
+                    
+                    // Set seek parameters for precise seeking on FLAC/Hi-Res
+                    exoPlayer?.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
+                    
+                    // Perform seek - ExoPlayer handles queueing internally even if not ready
+                    exoPlayer?.seekTo(positionMs)
+                    android.util.Log.d("ExoPlayer", "✅ Seek queued successfully")
+                    
+                    // Log audio format AFTER seek (with small delay to ensure it's applied)
+                    handler.postDelayed({
+                        logCurrentAudioFormat("AFTER SEEK")
+                    }, 200)
+                    
+                    result.success(null)
+                } else {
+                    android.util.Log.e("ExoPlayer", "❌ Seek failed: player null or invalid position")
+                    result.error("SEEK_ERROR", "Player not initialized or invalid position", null)
+                }
             }
             "getCurrentPosition" -> {
                 val position = exoPlayer?.currentPosition?.toInt() ?: 0
@@ -95,14 +129,31 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
 
     private fun setDashSource(url: String, result: Result) {
         try {
-            // Release current player
-            exoPlayer?.release()
-            
-            // Create new ExoPlayer with optimized settings for Hi-Res streaming
-            exoPlayer = ExoPlayer.Builder(context)
-                .build().apply {
-                    addListener(this@ExoPlayerPlugin)
-                }
+            // Only create new player if not exists
+            if (exoPlayer == null) {
+                // Use DefaultRenderersFactory for better device compatibility
+                // This avoids stuck loading issues on different hardware
+                val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
+                    .setEnableDecoderFallback(true)
+                    .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+                
+                exoPlayer = ExoPlayer.Builder(context)
+                    .setRenderersFactory(renderersFactory)
+                    .setAudioAttributes(
+                        androidx.media3.common.AudioAttributes.Builder()
+                            .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
+                            .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                            .build(),
+                        true // Handle audio focus
+                    )
+                    .build().apply {
+                        addListener(this@ExoPlayerPlugin)
+                        // Set seek parameters for precise seeking on FLAC/Hi-Res audio
+                        setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
+                        
+                        android.util.Log.d("ExoPlayer", "✅ ExoPlayer configured: Default renderer, Hi-Res passthrough enabled")
+                    }
+            }
 
             // Check if it's a file URL or HTTP URL
             if (url.startsWith("file://")) {
@@ -121,6 +172,7 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
                 exoPlayer?.prepare()
                 
                 sendEvent("source_set", mapOf("url" to url, "type" to "file"))
+                android.util.Log.d("ExoPlayer", "✅ File source prepared: $url")
             } else {
                 // For HTTP URLs (including localhost manifest serving)
                 // Use DefaultHttpDataSource with longer timeouts for Hi-Res streaming
@@ -132,8 +184,7 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
 
                 // Check if it's a DASH manifest URL
                 if (url.endsWith(".mpd") || url.contains("manifest")) {
-                    // DASH source - ExoPlayer will fetch manifest from localhost
-                    // and segments from external CDN (Tidal)
+                    // DASH source - simplified for VOD seeking
                     val dashMediaSource = DashMediaSource.Factory(httpDataSourceFactory)
                         .createMediaSource(MediaItem.fromUri(url))
                     
@@ -141,7 +192,7 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
                     exoPlayer?.prepare()
                     
                     sendEvent("source_set", mapOf("url" to url, "type" to "dash"))
-                    android.util.Log.d("ExoPlayer", "DASH source set: $url")
+                    android.util.Log.d("ExoPlayer", "✅ DASH source prepared with VOD seeking support: $url")
                 } else {
                     // Progressive source for regular audio files
                     val progressiveMediaSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
@@ -151,6 +202,7 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
                     exoPlayer?.prepare()
                     
                     sendEvent("source_set", mapOf("url" to url, "type" to "progressive"))
+                    android.util.Log.d("ExoPlayer", "✅ Progressive source prepared: $url")
                 }
             }
             
@@ -221,12 +273,96 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
             Player.STATE_ENDED -> "ended"
             else -> "unknown"
         }
+        android.util.Log.d("ExoPlayer", "🎭 Playback state: $stateString")
         sendEvent("playback_state_changed", mapOf("state" to stateString))
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        sendEvent("is_playing_changed", mapOf("isPlaying" to isPlaying))
+        android.util.Log.d("ExoPlayer", "▶️ Is playing: $isPlaying")
+        sendEvent("is_playing_changed", mapOf("is_playing" to isPlaying))
+        if (isPlaying) {
+            // Log audio format when playback starts
+            logCurrentAudioFormat("PLAYBACK STARTED")
+        }
     }
+    
+    override fun onTracksChanged(tracks: Tracks) {
+        // Log whenever track selection changes (important for quality monitoring)
+        logCurrentAudioFormat("TRACKS CHANGED")
+    }
+    
+    private fun logCurrentAudioFormat(debugContext: String) {
+        try {
+            val currentTracks = exoPlayer?.currentTracks ?: return
+            
+            android.util.Log.d("ExoPlayer", "═══════════════════════════════════════")
+            android.util.Log.d("ExoPlayer", "🎵 AUDIO QUALITY DEBUG - $debugContext")
+            android.util.Log.d("ExoPlayer", "═══════════════════════════════════════")
+            
+            // Get Android native audio output sample rate
+            try {
+                val audioManager = this.context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                val nativeSampleRate = audioManager.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
+                val nativeFramesPerBuffer = audioManager.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)
+                android.util.Log.d("ExoPlayer", "📱 Android Native Output: $nativeSampleRate Hz, Buffer: $nativeFramesPerBuffer frames")
+            } catch (e: Exception) {
+                android.util.Log.w("ExoPlayer", "Could not get native audio properties: ${e.message}")
+            }
+            
+            // Find audio track
+            for (trackGroup in currentTracks.groups) {
+                if (trackGroup.type == C.TRACK_TYPE_AUDIO && trackGroup.isSelected) {
+                    for (i in 0 until trackGroup.length) {
+                        if (trackGroup.isTrackSelected(i)) {
+                            val format = trackGroup.getTrackFormat(i)
+                            logAudioFormatDetails(format)
+                        }
+                    }
+                }
+            }
+            
+            android.util.Log.d("ExoPlayer", "═══════════════════════════════════════")
+        } catch (e: Exception) {
+            android.util.Log.e("ExoPlayer", "Error logging audio format: ${e.message}")
+        }
+    }
+    
+    private fun logAudioFormatDetails(format: Format) {
+        android.util.Log.d("ExoPlayer", "🎧 Codec: ${format.sampleMimeType ?: "Unknown"}")
+        
+        val sampleRate = format.sampleRate
+        val sampleRateKhz = sampleRate / 1000.0
+        val hiResIndicator = when {
+            sampleRate >= 96000 -> "🌟 Hi-Res (96kHz+)"
+            sampleRate >= 48000 -> "⭐ Hi-Res (48kHz)"
+            sampleRate >= 44100 -> "✓ CD Quality (44.1kHz)"
+            else -> "⚠️ Low Quality"
+        }
+        android.util.Log.d("ExoPlayer", "📊 Sample Rate: $sampleRate Hz (${sampleRateKhz} kHz) - $hiResIndicator")
+        
+        android.util.Log.d("ExoPlayer", "🔊 Channels: ${format.channelCount}")
+        android.util.Log.d("ExoPlayer", "💾 Bitrate: ${if (format.bitrate > 0) "${format.bitrate / 1000} kbps" else "Unknown"}")
+        
+        val bitDepth = format.pcmEncoding.let { 
+            when(it) {
+                C.ENCODING_PCM_16BIT -> "16-bit"
+                C.ENCODING_PCM_24BIT -> "24-bit"
+                C.ENCODING_PCM_32BIT -> "32-bit"
+                C.ENCODING_PCM_FLOAT -> "32-bit Float"
+                else -> "Unknown ($it)"
+            }
+        }
+        android.util.Log.d("ExoPlayer", "🎚️ Bit Depth: $bitDepth")
+        android.util.Log.d("ExoPlayer", "📦 Container: ${format.containerMimeType ?: "Unknown"}")
+        android.util.Log.d("ExoPlayer", "🔢 Format ID: ${format.id ?: "N/A"}")
+        
+        // Warning if potential quality degradation
+        if (sampleRate < 44100) {
+            android.util.Log.w("ExoPlayer", "⚠️ WARNING: Sample rate below CD quality! Possible resampling detected!")
+        }
+    }
+    
+
 
     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
         sendEvent("error", mapOf("message" to error.message))

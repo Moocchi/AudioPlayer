@@ -104,10 +104,15 @@ class ExoPlayerService extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   
-  // Position stream
+  // Position stream with periodic updates
   late Stream<Duration> positionStream;
   StreamController<Duration>? _positionController;
   Timer? _positionTimer;
+  Timer? _periodicUpdateTimer;
+  
+  // Seek debounce - prevent rapid successive seeks
+  DateTime? _lastSeekTime;
+  static const Duration _seekCooldown = Duration(milliseconds: 300);
   
   // DASH manifest info
   Map<String, dynamic>? _manifestInfo;
@@ -121,11 +126,19 @@ class ExoPlayerService extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   String get playbackState => _playbackState;
   Duration get position => _position;
-  Duration get duration => _duration;
+  
+  /// Get duration safely - returns zero if invalid
+  Duration get duration {
+    if (_duration.inMilliseconds > 0) {
+      return _duration;
+    }
+    return Duration.zero;
+  }
+  
   Map<String, dynamic>? get manifestInfo => _manifestInfo;
 
   void _initializePlayer() {
-    // Initialize position stream
+    // Initialize position stream with periodic updates
     _positionController = StreamController<Duration>.broadcast();
     positionStream = _positionController!.stream;
     
@@ -138,10 +151,17 @@ class ExoPlayerService extends ChangeNotifier {
       },
     );
     
-    // Start position updates
-    Timer.periodic(const Duration(milliseconds: 1000), (timer) {
-      if (_isPlaying) {
-        _updatePosition();
+    // Start periodic position updates every 100ms for smooth UI updates
+    _startPeriodicPositionUpdates();
+  }
+  
+  void _startPeriodicPositionUpdates() {
+    _periodicUpdateTimer?.cancel();
+    _periodicUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      _updatePosition();
+      // Always emit position through stream, even when paused
+      if (_positionController != null && !_positionController!.isClosed) {
+        _positionController!.add(_position);
       }
     });
   }
@@ -149,27 +169,39 @@ class ExoPlayerService extends ChangeNotifier {
   void _handlePlayerEvent(dynamic event) {
     if (event is Map<String, dynamic>) {
       final eventType = event['event'] as String?;
+      debugPrint('📨 EVENT RECEIVED: $eventType | Full event: $event');
       
       switch (eventType) {
-        case 'playbackStateChanged':
+        case 'playback_state_changed':
           _playbackState = event['state'] as String? ?? 'unknown';
-          debugPrint('🎵 ExoPlayer state: $_playbackState');
+          debugPrint('🎭 ExoPlayer state: $_playbackState');
           
-          if (_playbackState == 'ready' && _isLoading) {
+          // Always set loading to false when ready or buffering
+          // This ensures UI controls become active immediately
+          if (_playbackState == 'ready' || _playbackState == 'buffering') {
             _isLoading = false;
-            _loadingStatus = '';
+            if (_playbackState == 'ready') {
+              _loadingStatus = '';
+              debugPrint('✅ Loading complete - state is ready, controls activated');
+            } else {
+              debugPrint('⏳ Buffering, controls remain active');
+            }
           }
           notifyListeners();
           break;
           
-        case 'isPlayingChanged':
-          _isPlaying = event['isPlaying'] as bool? ?? false;
-          debugPrint('🎵 ExoPlayer playing: $_isPlaying');
+        case 'is_playing_changed':
+          final isPlaying = event['is_playing'] as bool?;
+          debugPrint('🔍 DEBUG: is_playing field = $isPlaying (type: ${isPlaying.runtimeType})');
+          _isPlaying = isPlaying ?? false;
+          debugPrint('▶️  ExoPlayer playing: $_isPlaying (toggled)');
           
+          // If audio is playing, clear loading status immediately
+          // This ensures UI controls stay active and responsive
           if (_isPlaying) {
-            _startPositionTimer();
-          } else {
-            _stopPositionTimer();
+            _isLoading = false;
+            _loadingStatus = '';
+            debugPrint('✨ Audio playing detected: loading cleared, controls active');
           }
           
           notifyListeners();
@@ -203,6 +235,9 @@ class ExoPlayerService extends ChangeNotifier {
           _loadingStatus = 'Error: $error';
           notifyListeners();
           break;
+          
+        default:
+          debugPrint('⚠️  UNKNOWN EVENT TYPE: "$eventType"');
       }
     }
   }
@@ -229,8 +264,16 @@ class ExoPlayerService extends ChangeNotifier {
     debugPrint('🎵 Playing Hi-Res song: ${song.title}');
     
     _isLoading = true;
-    _loadingStatus = 'Fetching manifest...';
     _currentSong = song;
+    
+    // For lossless, use direct URL. For Hi-Res, use DASH
+    if (song.isLossless && !song.isHiRes) {
+      _loadingStatus = 'Loading Lossless...';
+      debugPrint('🎯 Quality: LOSSLESS (Direct URL)');
+    } else {
+      _loadingStatus = 'Loading Hi-Res stream...';
+      debugPrint('🎯 Quality: HI_RES_LOSSLESS (DASH)');
+    }
     notifyListeners();
     
     try {
@@ -255,6 +298,30 @@ class ExoPlayerService extends ChangeNotifier {
       }
       
       String manifestMimeType = data['data']['manifestMimeType'] ?? '';
+      String? directUrl = data['data']['directUrl'] as String?;
+      
+      // For lossless without Hi-Res, use direct URL if available
+      if (song.isLossless && !song.isHiRes && directUrl != null && directUrl.isNotEmpty) {
+        debugPrint('🎵 Direct audio URL: $directUrl');
+        
+        // Set source first
+        await _channel.invokeMethod('setDashSource', {'url': directUrl});
+        
+        // Clear loading IMMEDIATELY after source is set, BEFORE play()
+        // This ensures UI is responsive without waiting for events
+        _isLoading = false;
+        _loadingStatus = '';
+        _isPlaying = true;
+        notifyListeners();
+        debugPrint('✅ Loading cleared before play()');
+        
+        // Now start playback
+        await play();
+        
+        debugPrint('✅ Lossless streaming started!');
+        return;
+      }
+      
       String manifestB64 = data['data']['manifest'];
       String manifestDecoded = utf8.decode(base64.decode(manifestB64));
       
@@ -269,13 +336,22 @@ class ExoPlayerService extends ChangeNotifier {
         String audioUrl = manifest['urls'][0];
         
         debugPrint('🎵 Direct audio URL: $audioUrl');
-        _loadingStatus = 'Setting up ExoPlayer...';
-        notifyListeners();
         
-        // Use ExoPlayer for direct URL
+        // Set source first
         await setDashSource(audioUrl);
-        await Future.delayed(const Duration(milliseconds: 500));
+        
+        // Clear loading IMMEDIATELY after source is set
+        _isLoading = false;
+        _loadingStatus = '';
+        _isPlaying = true;
+        notifyListeners();
+        debugPrint('✅ Loading cleared for regular manifest');
+        
+        // Small delay to ensure source is ready
+        await Future.delayed(const Duration(milliseconds: 300));
         await play();
+        
+        debugPrint('✅ Regular streaming started!');
       }
       
     } catch (e) {
@@ -307,7 +383,40 @@ class ExoPlayerService extends ChangeNotifier {
         (match) => '&amp;'
       );
 
-      debugPrint('🔍 Processed DASH manifest, length: ${mpdContent.length}');
+      // CRITICAL: Ensure manifest is static (not dynamic/live)
+      // This prevents ExoPlayer from re-fetching manifest and re-preparing codec on seek
+      if (mpdContent.contains('type="dynamic"')) {
+        debugPrint('⚠️  Converting dynamic manifest to static');
+        mpdContent = mpdContent.replaceFirst('type="dynamic"', 'type="static"');
+      }
+      
+      // Ensure manifest has static type attribute
+      if (!mpdContent.contains('type="')) {
+        debugPrint('⚠️  Adding type="static" to manifest');
+        mpdContent = mpdContent.replaceFirst('<MPD', '<MPD type="static"');
+      }
+      
+      // Remove or modify attributes that trigger manifest refresh
+      // minBufferTime can cause ExoPlayer to re-fetch manifest
+      mpdContent = mpdContent.replaceAll(RegExp(r'minBufferTime="[^"]*"'), 'minBufferTime="PT2S"');
+      
+      // Remove profiles that indicate live streaming capabilities
+      mpdContent = mpdContent.replaceAll('urn:mpeg:dash:profile:isoff-live:2011', 'urn:mpeg:dash:profile:isoff-on-demand:2011');
+      
+      // Ensure mediaPresentationDuration exists for VOD seeking
+      if (!mpdContent.contains('mediaPresentationDuration')) {
+        // Try to extract duration from Period element
+        debugPrint('⚠️  No mediaPresentationDuration found, attempting to extract from segments');
+        
+        // For DASH, if no duration, set a large one to prevent live detection
+        mpdContent = mpdContent.replaceFirst('<MPD', '<MPD mediaPresentationDuration="PT1H"');
+      }
+
+      debugPrint('📋 DASH Manifest Preparation:');
+      debugPrint('   - Type: ${mpdContent.contains('type="static"') ? 'Static (VOD)' : 'Dynamic (Live)'}');
+      debugPrint('   - Has Duration: ${mpdContent.contains('mediaPresentationDuration')}');
+      debugPrint('   - minBufferTime: ${RegExp(r'minBufferTime="[^"]*"').firstMatch(mpdContent)?.group(0) ?? 'default'}');
+      debugPrint('   - Manifest size: ${mpdContent.length} bytes');
       
       // Start local HTTP server and serve manifest
       final localServer = await LocalManifestServer.getInstance();
@@ -325,6 +434,9 @@ class ExoPlayerService extends ChangeNotifier {
       await Future.delayed(const Duration(milliseconds: 500));
       await play();
       
+      // Explicitly set playing state after play()
+      _isPlaying = true;
+      
       _isLoading = false;
       _loadingStatus = '';
       notifyListeners();
@@ -341,17 +453,37 @@ class ExoPlayerService extends ChangeNotifier {
 
   Future<void> play() async {
     try {
+      debugPrint('▶️  [Dart] Calling play via MethodChannel...');
+      // Optimistic update - set playing state before MethodChannel call
+      _isPlaying = true;
+      notifyListeners();
+      debugPrint('✨ [Dart] Optimistic update: _isPlaying = true');
+      
       await _channel.invokeMethod('play');
+      debugPrint('✅ [Dart] Play method invoked successfully');
     } catch (e) {
-      debugPrint('❌ Error playing: $e');
+      debugPrint('❌ [Dart] Error playing: $e');
+      // Revert on error
+      _isPlaying = false;
+      notifyListeners();
     }
   }
 
   Future<void> pause() async {
     try {
+      debugPrint('⏸️  [Dart] Calling pause via MethodChannel...');
+      // Optimistic update - set paused state before MethodChannel call
+      _isPlaying = false;
+      notifyListeners();
+      debugPrint('✨ [Dart] Optimistic update: _isPlaying = false');
+      
       await _channel.invokeMethod('pause');
+      debugPrint('✅ [Dart] Pause method invoked successfully');
     } catch (e) {
-      debugPrint('❌ Error pausing: $e');
+      debugPrint('❌ [Dart] Error pausing: $e');
+      // Revert on error
+      _isPlaying = true;
+      notifyListeners();
     }
   }
 
@@ -370,25 +502,45 @@ class ExoPlayerService extends ChangeNotifier {
 
   Future<void> seekTo(Duration position) async {
     try {
+      // Debounce rapid successive seeks to prevent codec re-initialization
+      final now = DateTime.now();
+      if (_lastSeekTime != null && now.difference(_lastSeekTime!) < _seekCooldown) {
+        debugPrint('⏱️  Seek throttled (cooldown ${_seekCooldown.inMilliseconds}ms)');
+        return;
+      }
+      _lastSeekTime = now;
+      
+      // Ensure a song is loaded
+      if (_currentSong == null) {
+        debugPrint('⚠️ Warning: No song loaded, cannot seek');
+        return;
+      }
+      
+      debugPrint('⏩ Seeking to ${position.inMilliseconds}ms (${_formatDuration(position)})');
+      
+      // Send seek command to native side
       await _channel.invokeMethod('seekTo', {
         'positionMs': position.inMilliseconds,
       });
+      
+      // Update local position so UI doesn't jump back to old position
+      _position = position;
+      notifyListeners();
+      
     } catch (e) {
       debugPrint('❌ Error seeking: $e');
     }
   }
 
-  /// Set DASH source for Hi-Res streaming
+  /// Set source for audio streaming
+  /// Status is managed by caller, not in this method
   Future<void> setDashSource(String url) async {
     try {
-      _loadingStatus = 'Loading Hi-Res stream...';
-      notifyListeners();
-      
       await _channel.invokeMethod('setDashSource', {'url': url});
-      debugPrint('✅ ExoPlayer: DASH source set - $url');
+      debugPrint('✅ ExoPlayer: Source set - $url');
     } catch (e) {
-      debugPrint('❌ Error setting DASH source: $e');
-      throw Exception('Failed to set DASH source: $e');
+      debugPrint('❌ Error setting source: $e');
+      throw Exception('Failed to set source: $e');
     }
   }
 
@@ -440,10 +592,33 @@ class ExoPlayerService extends ChangeNotifier {
 
   /// Toggle play/pause
   Future<void> togglePlayPause() async {
-    if (_isPlaying) {
-      await pause();
-    } else {
-      await play();
+    debugPrint('🔄 togglePlayPause called | isPlaying=$_isPlaying');
+    final targetIsPlaying = !_isPlaying;
+    final previousState = _isPlaying;
+    
+    // Optimistic update - change UI immediately without waiting for event
+    _isPlaying = targetIsPlaying;
+    notifyListeners();
+    debugPrint('✨ UI updated optimistically: isPlaying=$_isPlaying');
+    
+    try {
+      if (targetIsPlaying) {
+        debugPrint('▶️  Calling play()...');
+        await play();
+      } else {
+        debugPrint('⏸️  Calling pause()...');
+        await pause();
+      }
+      
+      // Wait up to 1 second for native event to sync
+      // If event doesn't arrive, we keep the optimistic update
+      await Future.delayed(const Duration(milliseconds: 1000));
+      debugPrint('✅ Play/Pause command completed');
+    } catch (e) {
+      // If error, revert optimistic update immediately
+      _isPlaying = previousState;
+      notifyListeners();
+      debugPrint('❌ Error in togglePlayPause, reverted: $e');
     }
   }
 
@@ -470,24 +645,17 @@ class ExoPlayerService extends ChangeNotifier {
     }
   }
 
-  void _startPositionTimer() {
-    _positionTimer?.cancel();
-    _positionTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      if (_isPlaying) {
-        _updatePosition();
-        _positionController?.add(_position);
-      }
-    });
-  }
-
-  void _stopPositionTimer() {
-    _positionTimer?.cancel();
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes;
+    final seconds = d.inSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   @override
   void dispose() {
     _eventSubscription?.cancel();
-    _stopPositionTimer();
+    _periodicUpdateTimer?.cancel();
+    _positionTimer?.cancel();
     _positionController?.close();
     stop();
     super.dispose();
