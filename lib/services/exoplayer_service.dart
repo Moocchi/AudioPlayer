@@ -167,13 +167,28 @@ class ExoPlayerService extends ChangeNotifier {
   }
 
   void _handlePlayerEvent(dynamic event) {
+    debugPrint('📩 Received native event: $event (type: ${event.runtimeType})');
+    
+    // Convert event to Map<String, dynamic> safely
+    Map<String, dynamic>? eventMap;
     if (event is Map<String, dynamic>) {
-      final eventType = event['event'] as String?;
-      debugPrint('📨 EVENT RECEIVED: $eventType | Full event: $event');
+      eventMap = event;
+    } else if (event is Map) {
+      // Handle Map<Object?, Object?> from platform channel
+      eventMap = Map<String, dynamic>.from(event);
+    }
+    
+    if (eventMap == null) {
+      debugPrint('⚠️ Could not parse event as Map');
+      return;
+    }
+    
+    final eventType = eventMap['event']?.toString();
+    debugPrint('📨 EVENT RECEIVED: $eventType');
       
-      switch (eventType) {
+    switch (eventType) {
         case 'playback_state_changed':
-          _playbackState = event['state'] as String? ?? 'unknown';
+          _playbackState = eventMap['state']?.toString() ?? 'unknown';
           debugPrint('🎭 ExoPlayer state: $_playbackState');
           
           // Always set loading to false when ready or buffering
@@ -191,10 +206,19 @@ class ExoPlayerService extends ChangeNotifier {
           break;
           
         case 'is_playing_changed':
-          final isPlaying = event['is_playing'] as bool?;
-          debugPrint('🔍 DEBUG: is_playing field = $isPlaying (type: ${isPlaying.runtimeType})');
-          _isPlaying = isPlaying ?? false;
-          debugPrint('▶️  ExoPlayer playing: $_isPlaying (toggled)');
+          final isPlayingRaw = eventMap['is_playing'];
+          debugPrint('🔍 DEBUG: is_playing raw = $isPlayingRaw (type: ${isPlayingRaw.runtimeType})');
+          
+          // Handle both bool and dynamic types
+          bool newIsPlaying = false;
+          if (isPlayingRaw is bool) {
+            newIsPlaying = isPlayingRaw;
+          } else if (isPlayingRaw != null) {
+            newIsPlaying = isPlayingRaw.toString() == 'true';
+          }
+          
+          _isPlaying = newIsPlaying;
+          debugPrint('▶️  ExoPlayer playing: $_isPlaying (updated from native)');
           
           // If audio is playing, clear loading status immediately
           // This ensures UI controls stay active and responsive
@@ -205,10 +229,11 @@ class ExoPlayerService extends ChangeNotifier {
           }
           
           notifyListeners();
+          debugPrint('🔔 notifyListeners() called for is_playing_changed');
           break;
           
         case 'manifestLoaded':
-          _manifestInfo = Map<String, dynamic>.from(event);
+          _manifestInfo = Map<String, dynamic>.from(eventMap);
           _manifestInfo!.remove('event'); // Remove event type
           
           debugPrint('📄 DASH Manifest loaded:');
@@ -229,7 +254,7 @@ class ExoPlayerService extends ChangeNotifier {
           break;
           
         case 'error':
-          final error = event['error'] as String?;
+          final error = eventMap['error']?.toString();
           debugPrint('❌ ExoPlayer error: $error');
           _isLoading = false;
           _loadingStatus = 'Error: $error';
@@ -239,7 +264,6 @@ class ExoPlayerService extends ChangeNotifier {
         default:
           debugPrint('⚠️  UNKNOWN EVENT TYPE: "$eventType"');
       }
-    }
   }
 
   Future<void> _updatePosition() async {

@@ -297,7 +297,7 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        android.util.Log.d("ExoPlayer", "▶️ Is playing: $isPlaying")
+        android.util.Log.d("ExoPlayer", "▶️ Is playing changed: $isPlaying, eventSink: ${eventSink != null}")
         sendEvent("is_playing_changed", mapOf("is_playing" to isPlaying))
         if (isPlaying) {
             // Log audio format when playback starts
@@ -392,6 +392,7 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
             val eventData = mutableMapOf<String, Any?>()
             eventData["event"] = event
             eventData.putAll(data)
+            android.util.Log.d("ExoPlayer", "📤 Sending event: $event, data: $data, sink: ${eventSink != null}")
             eventSink?.success(eventData)
         }
     }

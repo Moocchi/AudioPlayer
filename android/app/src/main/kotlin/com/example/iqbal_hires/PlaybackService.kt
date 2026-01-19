@@ -28,10 +28,23 @@ class PlaybackService : Service() {
     private var currentTitle = ""
     private var currentArtist = ""
     private var currentArtUrl = ""
+    private var currentAlbumArt: Bitmap? = null
+    
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            android.util.Log.d("PlaybackService", "🎵 isPlaying changed: $isPlaying")
+            // Update notification when play state changes
+            if (currentTitle.isNotEmpty()) {
+                showNotification(currentAlbumArt)
+            }
+        }
+    }
 
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "iqbal_hires_playback"
+        const val ACTION_PLAY = "play"
+        const val ACTION_PAUSE = "pause"
         
         var instance: PlaybackService? = null
             private set
@@ -47,8 +60,20 @@ class PlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        android.util.Log.d("PlaybackService", "✅ PlaybackService onStartCommand")
-        // Don't show notification on start - only when music plays
+        android.util.Log.d("PlaybackService", "✅ PlaybackService onStartCommand, action: ${intent?.action}")
+        
+        // Handle play/pause actions from notification
+        when (intent?.action) {
+            ACTION_PLAY -> {
+                android.util.Log.d("PlaybackService", "▶️ Play action received")
+                player?.play()
+            }
+            ACTION_PAUSE -> {
+                android.util.Log.d("PlaybackService", "⏸️ Pause action received")
+                player?.pause()
+            }
+        }
+        
         return START_STICKY
     }
     
@@ -70,6 +95,9 @@ class PlaybackService : Service() {
     
     fun setPlayer(exoPlayer: Player) {
         this.player = exoPlayer
+        
+        // Add listener to track playback state changes
+        exoPlayer.addListener(playerListener)
         
         // Create MediaSession
         mediaSession = MediaSession.Builder(this, exoPlayer)
@@ -97,6 +125,7 @@ class PlaybackService : Service() {
             }
             
             withContext(Dispatchers.Main) {
+                currentAlbumArt = albumArt
                 showNotification(albumArt)
             }
         }
@@ -104,18 +133,19 @@ class PlaybackService : Service() {
     
     private fun showNotification(albumArt: Bitmap?) {
         val isPlaying = player?.isPlaying ?: false
+        android.util.Log.d("PlaybackService", "📢 showNotification: isPlaying=$isPlaying, title=$currentTitle")
         
         val playPauseAction = if (isPlaying) {
             NotificationCompat.Action(
-                android.R.drawable.ic_media_pause,
+                R.drawable.ic_pause,
                 "Pause",
-                createActionPendingIntent("pause")
+                createActionPendingIntent(ACTION_PAUSE)
             )
         } else {
             NotificationCompat.Action(
-                android.R.drawable.ic_media_play,
+                R.drawable.ic_play,
                 "Play",
-                createActionPendingIntent("play")
+                createActionPendingIntent(ACTION_PLAY)
             )
         }
         
@@ -129,16 +159,15 @@ class PlaybackService : Service() {
         )
         
         val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_music_note)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
-            .setSubText("Iqbal Hires")
             .setLargeIcon(albumArt)
             .addAction(playPauseAction)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setContentIntent(contentIntent)
-            .setOngoing(true)
+            .setOngoing(isPlaying) // Only ongoing when playing
         
         // Add MediaStyle if MediaSession is available
         mediaSession?.let { session ->
@@ -178,6 +207,7 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        player?.removeListener(playerListener)
         mediaSession?.release()
         instance = null
         super.onDestroy()
