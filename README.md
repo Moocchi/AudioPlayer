@@ -4,13 +4,16 @@
 |--------|------|
 | ✓ | Play the song while downloading (if hi-res) |
 | ✓ | Fix seek and song timeline pause/play function and lossless playback bug |
-| | Perfect Bit |
-| | Previous and next button in media player |
-| | Notification popup when song changes when not in app when in app no notif. |
+| | check if can Perfect Bit |
+| | Previous and next button in media player and sync with app |
+| | Notification popup when song changes when not in app, when in app no notif showed. |
+| | Playlist, liked song, On repeat, Quick choose, and quick Shortcut |
+| | Better animation |
+| | fix query api,and fix app inefficient process causing lag |
+| | SD card / internal cache saving |
+| | Auto-fill queue according to song genre |
 | | Fade out transition song |
 | | Seamless playback |
-| | Auto-fill queue according to preference genre |
-| | SD card / internal cache saving |
 | | Sleep timer |
 
 **Legend:** ✓ = Done | ` = Ongoing
