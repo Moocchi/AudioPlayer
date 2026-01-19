@@ -48,43 +48,8 @@ class PlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         android.util.Log.d("PlaybackService", "✅ PlaybackService onStartCommand")
-        
-        // Show initial placeholder notification to keep service alive
-        showPlaceholderNotification()
-        
+        // Don't show notification on start - only when music plays
         return START_STICKY
-    }
-    
-    private fun showPlaceholderNotification() {
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("Iqbal Hires")
-            .setContentText("Ready to play")
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setOnlyAlertOnce(true)
-            .setContentIntent(contentIntent)
-            .setOngoing(true)
-            .build()
-        
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-            android.util.Log.d("PlaybackService", "✅ Initial foreground notification shown")
-        } catch (e: Exception) {
-            android.util.Log.e("PlaybackService", "❌ Failed to show placeholder notification: ${e.message}")
-        }
     }
     
     private fun createNotificationChannel() {

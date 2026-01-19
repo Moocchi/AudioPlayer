@@ -46,13 +46,9 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "exoplayer")
         channel.setMethodCallHandler(this)
         
-        // Start PlaybackService for media notification as foreground service
+        // Start PlaybackService as regular service (not foreground yet)
         val serviceIntent = Intent(context, PlaybackService::class.java)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent)
-        } else {
-            context.startService(serviceIntent)
-        }
+        context.startService(serviceIntent)
         
         eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "exoplayer/events")
         eventChannel.setStreamHandler(object : EventChannel.StreamHandler {
