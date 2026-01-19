@@ -136,6 +136,25 @@ class ExoPlayerService extends ChangeNotifier {
   }
   
   Map<String, dynamic>? get manifestInfo => _manifestInfo;
+  
+  /// Fetch actual file size from streaming URL and update song
+  Future<void> _fetchAndUpdateFileSize(String streamUrl, Song song) async {
+    try {
+      final headResponse = await http.head(Uri.parse(streamUrl));
+      final contentLength = headResponse.headers['content-length'];
+      
+      if (contentLength != null) {
+        final size = int.tryParse(contentLength);
+        if (size != null) {
+          song.fileSize = size;
+          debugPrint('📦 File size updated: ${song.fileSizeMB}');
+          notifyListeners(); // Update UI with actual file size
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching file size: $e');
+    }
+  }
 
   void _initializePlayer() {
     // Initialize position stream with periodic updates
@@ -328,6 +347,9 @@ class ExoPlayerService extends ChangeNotifier {
       if (song.isLossless && !song.isHiRes && directUrl != null && directUrl.isNotEmpty) {
         debugPrint('🎵 Direct audio URL: $directUrl');
         
+        // Fetch actual file size in background (don't await)
+        _fetchAndUpdateFileSize(directUrl, song);
+        
         // Set source first
         await _channel.invokeMethod('setDashSource', {'url': directUrl});
         
@@ -363,6 +385,9 @@ class ExoPlayerService extends ChangeNotifier {
         String audioUrl = manifest['urls'][0];
         
         debugPrint('🎵 Direct audio URL: $audioUrl');
+        
+        // Fetch actual file size in background
+        _fetchAndUpdateFileSize(audioUrl, song);
         
         // Update notification with metadata
         await _updateNotification(song);
@@ -623,35 +648,22 @@ class ExoPlayerService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Toggle play/pause
+  /// Toggle play/pause - fully reactive, no optimistic updates
   Future<void> togglePlayPause() async {
     debugPrint('🔄 togglePlayPause called | isPlaying=$_isPlaying');
-    final targetIsPlaying = !_isPlaying;
-    final previousState = _isPlaying;
     
-    // Optimistic update - change UI immediately without waiting for event
-    _isPlaying = targetIsPlaying;
-    notifyListeners();
-    debugPrint('✨ UI updated optimistically: isPlaying=$_isPlaying');
-    
+    // No optimistic update - wait for native event to update _isPlaying
     try {
-      if (targetIsPlaying) {
-        debugPrint('▶️  Calling play()...');
-        await play();
-      } else {
+      if (_isPlaying) {
         debugPrint('⏸️  Calling pause()...');
         await pause();
+      } else {
+        debugPrint('▶️  Calling play()...');
+        await play();
       }
-      
-      // Wait up to 1 second for native event to sync
-      // If event doesn't arrive, we keep the optimistic update
-      await Future.delayed(const Duration(milliseconds: 1000));
-      debugPrint('✅ Play/Pause command completed');
+      debugPrint('✅ Play/Pause command sent to native');
     } catch (e) {
-      // If error, revert optimistic update immediately
-      _isPlaying = previousState;
-      notifyListeners();
-      debugPrint('❌ Error in togglePlayPause, reverted: $e');
+      debugPrint('❌ Error in togglePlayPause: $e');
     }
   }
 

@@ -7,6 +7,9 @@ class Song {
   final int duration;
   final bool isHiRes;
   final List<String> mediaTags;
+  
+  // File size in bytes (fetched from API/streaming URL)
+  int? fileSize;
 
   Song({
     required this.id,
@@ -17,10 +20,42 @@ class Song {
     required this.duration,
     this.isHiRes = false,
     this.mediaTags = const [],
+    this.fileSize,
   });
 
   // Check if song is Lossless (but not Hi-Res)
   bool get isLossless => !isHiRes && mediaTags.contains("LOSSLESS");
+  
+  // Get file size in MB formatted string
+  String? get fileSizeMB {
+    if (fileSize == null) return null;
+    double mb = fileSize! / (1024 * 1024);
+    if (mb >= 100) {
+      return '${mb.toStringAsFixed(0)} MB';
+    } else if (mb >= 10) {
+      return '${mb.toStringAsFixed(1)} MB';
+    } else {
+      return '${mb.toStringAsFixed(2)} MB';
+    }
+  }
+  
+  // Estimate file size if not fetched yet
+  String get estimatedFileSizeMB {
+    // More accurate estimation:
+    // 24-bit/44.1kHz FLAC: ~12 MB per minute
+    // 16-bit/44.1kHz FLAC: ~5.5 MB per minute
+    double mbPerMinute = isHiRes ? 12.0 : 5.5;
+    double minutes = duration / 60.0;
+    double sizeMB = mbPerMinute * minutes;
+    
+    if (sizeMB >= 100) {
+      return '${sizeMB.toStringAsFixed(0)} MB';
+    } else if (sizeMB >= 10) {
+      return '${sizeMB.toStringAsFixed(1)} MB';
+    } else {
+      return '${sizeMB.toStringAsFixed(1)} MB';
+    }
+  }
 
   factory Song.fromJson(Map<String, dynamic> json) {
     List mediaTags = json['mediaMetadata']?['tags'] is List 

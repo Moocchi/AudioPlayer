@@ -74,7 +74,25 @@ class PlaybackService : Service() {
             }
         }
         
-        return START_STICKY
+        // START_NOT_STICKY: Don't restart service if killed by system
+        return START_NOT_STICKY
+    }
+    
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        android.util.Log.d("PlaybackService", "📱 App swiped away - stopping playback")
+        
+        // Stop playback
+        player?.stop()
+        
+        // Release MediaSession
+        mediaSession?.release()
+        mediaSession = null
+        
+        // Stop foreground and remove notification
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        
+        super.onTaskRemoved(rootIntent)
     }
     
     private fun createNotificationChannel() {
@@ -94,16 +112,37 @@ class PlaybackService : Service() {
     }
     
     fun setPlayer(exoPlayer: Player) {
+        // If same player, do nothing
+        if (this.player === exoPlayer && mediaSession != null) {
+            android.util.Log.d("PlaybackService", "⚠️ Player already set, skipping")
+            return
+        }
+        
+        // Remove listener from old player if exists
+        this.player?.removeListener(playerListener)
+        
+        // Release old MediaSession if exists
+        mediaSession?.let {
+            android.util.Log.d("PlaybackService", "🔄 Releasing old MediaSession")
+            it.release()
+            mediaSession = null
+        }
+        
         this.player = exoPlayer
         
         // Add listener to track playback state changes
         exoPlayer.addListener(playerListener)
         
-        // Create MediaSession
-        mediaSession = MediaSession.Builder(this, exoPlayer)
-            .build()
-            
-        android.util.Log.d("PlaybackService", "✅ Player and MediaSession set")
+        // Create MediaSession with unique ID using timestamp
+        try {
+            mediaSession = MediaSession.Builder(this, exoPlayer)
+                .setId("HiresSession_${System.currentTimeMillis()}")
+                .build()
+            android.util.Log.d("PlaybackService", "✅ Player and MediaSession set")
+        } catch (e: IllegalStateException) {
+            android.util.Log.e("PlaybackService", "❌ MediaSession creation failed: ${e.message}")
+            // Session ID conflict - try to continue without MediaSession
+        }
     }
     
     fun updateMetadata(title: String, artist: String, artUrl: String) {
@@ -207,9 +246,19 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        android.util.Log.d("PlaybackService", "🔄 PlaybackService destroying...")
+        
+        // Remove listener from player
         player?.removeListener(playerListener)
+        player = null
+        
+        // Release MediaSession
         mediaSession?.release()
+        mediaSession = null
+        
+        // Clear instance
         instance = null
+        
         super.onDestroy()
         android.util.Log.d("PlaybackService", "✅ PlaybackService destroyed")
     }

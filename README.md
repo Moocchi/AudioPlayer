@@ -3,10 +3,11 @@
 | Status | Task |
 |--------|------|
 | ✓ | Play the song while downloading (if hi-res) |
-| ✓ | Fix seek and song timeline pause/play function and lossless playback bug|
-| ` | Better animation, better mini player, media control |
-| | Notification popup when song changes |
-| | Fade out transition |
+| ✓ | Fix seek and song timeline pause/play function and lossless playback bug |
+| | Perfect Bit |
+| | Previous and next button in media player |
+| | Notification popup when song changes when not in app when in app no notif. |
+| | Fade out transition song |
 | | Seamless playback |
 | | Auto-fill queue according to preference genre |
 | | SD card / internal cache saving |

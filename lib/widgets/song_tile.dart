@@ -20,21 +20,9 @@ class SongTile extends StatelessWidget {
     this.showDuration = true,
   });
 
-  String _estimateFileSize() {
-    // Estimate file size based on quality and duration
-    // Hi-Res: ~5-6 MB per minute (24-bit/96kHz FLAC)
-    // Lossless: ~3-4 MB per minute (16-bit/44.1kHz FLAC)
-    double mbPerMinute = song.isHiRes ? 5.5 : 3.5;
-    double minutes = song.duration / 60.0;
-    double sizeMB = mbPerMinute * minutes;
-    
-    if (sizeMB >= 100) {
-      return '${sizeMB.toStringAsFixed(0)} MB';
-    } else if (sizeMB >= 10) {
-      return '${sizeMB.toStringAsFixed(1)} MB';
-    } else {
-      return '${sizeMB.toStringAsFixed(1)} MB';
-    }
+  String _getFileSize() {
+    // Use actual file size if available, otherwise use improved estimation
+    return song.fileSizeMB ?? song.estimatedFileSizeMB;
   }
 
   @override
@@ -147,7 +135,7 @@ class SongTile extends StatelessWidget {
                   
                   // Size info
                   Text(
-                    '${song.isHiRes ? "24-bit • " : "16-bit • "}${_estimateFileSize()}',
+                    '${song.isHiRes ? "24-bit • " : "16-bit • "}${_getFileSize()}',
                     style: TextStyle(
                       fontSize: 11,
                       color: AppTheme.textSecondary.withOpacity(0.7),
