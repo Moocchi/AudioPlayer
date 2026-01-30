@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
 import '../services/audio_service.dart';
 import '../theme/app_theme.dart';
@@ -47,16 +48,17 @@ class SongTile extends StatelessWidget {
               ),
             if (index != null) const SizedBox(width: 8),
             
-            // Album cover
+            // Album cover with caching
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: song.albumCover != null
-                  ? Image.network(
-                      song.albumCover!,
+                  ? CachedNetworkImage(
+                      imageUrl: song.albumCover!,
                       width: 50,
                       height: 50,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholder(),
+                      placeholder: (_, __) => _placeholder(),
+                      errorWidget: (_, __, ___) => _placeholder(),
                     )
                   : _placeholder(),
             ),

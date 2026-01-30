@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
+import 'play_history_service.dart';
 
 /// Local HTTP server for serving DASH manifests
 class LocalManifestServer {
@@ -104,11 +105,18 @@ class ExoPlayerService extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   
+  // Song ending state for smooth animation
+  bool _isSongEnding = false;
+  
   // Position stream with periodic updates
   late Stream<Duration> positionStream;
   StreamController<Duration>? _positionController;
   Timer? _positionTimer;
   Timer? _periodicUpdateTimer;
+  
+  // Throttle notifyListeners to prevent excessive rebuilds
+  DateTime? _lastNotifyTime;
+  static const Duration _notifyThrottle = Duration(milliseconds: 250);
   
   // Seek debounce - prevent rapid successive seeks
   DateTime? _lastSeekTime;
@@ -126,6 +134,7 @@ class ExoPlayerService extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   String get playbackState => _playbackState;
   Duration get position => _position;
+  bool get isSongEnding => _isSongEnding;
   
   /// Get duration safely - returns zero if invalid
   Duration get duration {
@@ -176,9 +185,10 @@ class ExoPlayerService extends ChangeNotifier {
   
   void _startPeriodicPositionUpdates() {
     _periodicUpdateTimer?.cancel();
-    _periodicUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      _updatePosition();
-      // Always emit position through stream, even when paused
+    // Reduced from 100ms to 500ms for better performance
+    _periodicUpdateTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      _updatePositionOnly(); // Only update position, don't notify
+      // Emit position through stream for UI
       if (_positionController != null && !_positionController!.isClosed) {
         _positionController!.add(_position);
       }
@@ -209,6 +219,12 @@ class ExoPlayerService extends ChangeNotifier {
         case 'playback_state_changed':
           _playbackState = eventMap['state']?.toString() ?? 'unknown';
           debugPrint('🎭 ExoPlayer state: $_playbackState');
+          
+          // Handle song ended
+          if (_playbackState == 'ended') {
+            debugPrint('🏁 Song ended, checking queue...');
+            _handleSongEnded();
+          }
           
           // Always set loading to false when ready or buffering
           // This ensures UI controls become active immediately
@@ -279,13 +295,27 @@ class ExoPlayerService extends ChangeNotifier {
           _loadingStatus = 'Error: $error';
           notifyListeners();
           break;
+        
+        // Handle skip events from notification
+        case 'skip_next':
+          debugPrint('⏭️ Skip Next event received from notification');
+          debugPrint('📋 Current queue: ${_queue.length} songs, index: $_currentIndex');
+          playNext(); // Fire and forget - no await needed
+          break;
+          
+        case 'skip_previous':
+          debugPrint('⏮️ Skip Previous event received from notification');
+          debugPrint('📋 Current queue: ${_queue.length} songs, index: $_currentIndex');
+          playPrevious(); // Fire and forget - no await needed
+          break;
           
         default:
           debugPrint('⚠️  UNKNOWN EVENT TYPE: "$eventType"');
       }
   }
 
-  Future<void> _updatePosition() async {
+  /// Update position without notifying listeners (for periodic updates)
+  Future<void> _updatePositionOnly() async {
     try {
       final position = await _channel.invokeMethod<int>('getCurrentPosition');
       final duration = await _channel.invokeMethod<int>('getDuration');
@@ -296,15 +326,94 @@ class ExoPlayerService extends ChangeNotifier {
       if (duration != null && duration > 0) {
         _duration = Duration(milliseconds: duration);
       }
-      
-      notifyListeners();
     } catch (e) {
       // Position update failed, ignore
     }
   }
 
+  Future<void> _updatePosition() async {
+    await _updatePositionOnly();
+    _throttledNotify();
+  }
+  
+  /// Throttled notifyListeners to prevent excessive UI rebuilds
+  void _throttledNotify() {
+    final now = DateTime.now();
+    if (_lastNotifyTime == null || 
+        now.difference(_lastNotifyTime!) > _notifyThrottle) {
+      _lastNotifyTime = now;
+      notifyListeners();
+    }
+  }
+  
+  /// Handle song ended - animate then play next or reset
+  Future<void> _handleSongEnded() async {
+    debugPrint('🏁 _handleSongEnded: queue.length=${_queue.length}, currentIndex=$_currentIndex');
+    
+    // Set song ending flag for UI animation
+    _isSongEnding = true;
+    _isPlaying = false;
+    _position = Duration.zero; // Reset position immediately
+    notifyListeners();
+    
+    // Emit zero position for smooth animation
+    if (_positionController != null && !_positionController!.isClosed) {
+      _positionController!.add(Duration.zero);
+    }
+    
+    // Wait for animation to complete (500ms)
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    // Check if there's a next song in queue
+    if (_queue.isNotEmpty && _currentIndex < _queue.length - 1) {
+      debugPrint('📋 Playing next song in queue...');
+      _currentIndex++;
+      final nextSong = _queue[_currentIndex];
+      // Keep _isSongEnding true until playHiResSong resets it
+      await playHiResSong(nextSong);
+    } else {
+      // No more songs - reset flag and stay at zero
+      debugPrint('🔄 No more songs, staying at zero');
+      _isSongEnding = false;
+      seekTo(Duration.zero);
+      notifyListeners();
+    }
+    
+    debugPrint('✅ Song end handled');
+  }
+  
+  /// Reset position to beginning with smooth animation support
+  void _resetToBeginning() {
+    _isPlaying = false;
+    _position = Duration.zero;
+    
+    // Emit zero position to stream for smooth UI update
+    if (_positionController != null && !_positionController!.isClosed) {
+      _positionController!.add(Duration.zero);
+    }
+    
+    // Seek to beginning in native player
+    seekTo(Duration.zero);
+    
+    notifyListeners();
+    debugPrint('✅ Position reset to zero');
+  }
+
   Future<void> playHiResSong(Song song) async {
     debugPrint('🎵 Playing Hi-Res song: ${song.title}');
+    
+    // Record play in history
+    PlayHistoryService().recordPlay(song);
+    
+    // Keep _isSongEnding true during transition to prevent slider jump
+    // It will be reset when we're ready to play
+    
+    // Reset position and duration immediately
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    if (_positionController != null && !_positionController!.isClosed) {
+      _positionController!.add(Duration.zero);
+    }
     
     _isLoading = true;
     _currentSong = song;
@@ -353,19 +462,20 @@ class ExoPlayerService extends ChangeNotifier {
         // Set source first
         await _channel.invokeMethod('setDashSource', {'url': directUrl});
         
-        // Update notification with metadata
-        await _updateNotification(song);
-        
         // Clear loading IMMEDIATELY after source is set, BEFORE play()
         // This ensures UI is responsive without waiting for events
         _isLoading = false;
         _loadingStatus = '';
         _isPlaying = true;
+        _isSongEnding = false; // Reset AFTER loading, ready to play
         notifyListeners();
         debugPrint('✅ Loading cleared before play()');
         
         // Now start playback
         await play();
+        
+        // Update notification AFTER playback starts for better sync
+        await _updateNotification(song);
         
         debugPrint('✅ Lossless streaming started!');
         return;
@@ -389,9 +499,6 @@ class ExoPlayerService extends ChangeNotifier {
         // Fetch actual file size in background
         _fetchAndUpdateFileSize(audioUrl, song);
         
-        // Update notification with metadata
-        await _updateNotification(song);
-        
         // Set source first
         await setDashSource(audioUrl);
         
@@ -399,6 +506,7 @@ class ExoPlayerService extends ChangeNotifier {
         _isLoading = false;
         _loadingStatus = '';
         _isPlaying = true;
+        _isSongEnding = false; // Reset AFTER loading, ready to play
         notifyListeners();
         debugPrint('✅ Loading cleared for regular manifest');
         
@@ -406,12 +514,16 @@ class ExoPlayerService extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 300));
         await play();
         
+        // Update notification AFTER playback starts for better sync
+        await _updateNotification(song);
+        
         debugPrint('✅ Regular streaming started!');
       }
       
     } catch (e) {
       debugPrint('❌ Error playing Hi-Res song: $e');
       _isLoading = false;
+      _isSongEnding = false; // Reset on error too
       _loadingStatus = 'Error: $e';
       notifyListeners();
     }
@@ -483,21 +595,22 @@ class ExoPlayerService extends ChangeNotifier {
       _loadingStatus = 'Starting Hi-Res stream...';
       notifyListeners();
       
-      // Update notification with metadata
-      await _updateNotification(song);
-      
       // Use ExoPlayer to stream directly from DASH manifest
       // ExoPlayer will fetch segments from Tidal CDN automatically
       await _channel.invokeMethod('setDashSource', {'url': manifestUrl});
       await Future.delayed(const Duration(milliseconds: 500));
-      await play();
       
-      // Explicitly set playing state after play()
+      // Reset song ending flag NOW - right before play starts
+      _isSongEnding = false;
       _isPlaying = true;
-      
       _isLoading = false;
       _loadingStatus = '';
       notifyListeners();
+      
+      await play();
+      
+      // Update notification AFTER playback starts for better sync
+      await _updateNotification(song);
       
       debugPrint('🎵 ExoPlayer Hi-Res streaming started!');
       
@@ -637,11 +750,16 @@ class ExoPlayerService extends ChangeNotifier {
 
   /// Play queue of songs starting from specific index
   Future<void> playQueue(List<Song> songs, int startIndex) async {
+    debugPrint('📋 playQueue called with ${songs.length} songs, startIndex: $startIndex');
+    
     _queue = List.from(songs);
     _currentIndex = startIndex;
     
+    debugPrint('📋 Queue set: ${_queue.length} songs, currentIndex: $_currentIndex');
+    
     if (_queue.isNotEmpty && _currentIndex < _queue.length) {
       final song = _queue[_currentIndex];
+      debugPrint('📋 Playing: ${song.title}');
       await playHiResSong(song);
     }
     
@@ -674,19 +792,41 @@ class ExoPlayerService extends ChangeNotifier {
 
   /// Play next song in queue
   Future<void> playNext() async {
-    if (_queue.isNotEmpty && _currentIndex < _queue.length - 1) {
+    debugPrint('⏭️ playNext called | queue.length=${_queue.length} | currentIndex=$_currentIndex');
+    
+    if (_queue.isEmpty) {
+      debugPrint('⚠️ Queue is empty, cannot skip next');
+      return;
+    }
+    
+    if (_currentIndex < _queue.length - 1) {
       _currentIndex++;
       final nextSong = _queue[_currentIndex];
+      debugPrint('⏭️ Playing next song: ${nextSong.title} (index $_currentIndex)');
       await playHiResSong(nextSong);
+    } else {
+      debugPrint('⚠️ Already at last song in queue');
     }
   }
 
   /// Play previous song in queue
   Future<void> playPrevious() async {
-    if (_queue.isNotEmpty && _currentIndex > 0) {
+    debugPrint('⏮️ playPrevious called | queue.length=${_queue.length} | currentIndex=$_currentIndex');
+    
+    if (_queue.isEmpty) {
+      debugPrint('⚠️ Queue is empty, cannot skip previous');
+      return;
+    }
+    
+    if (_currentIndex > 0) {
       _currentIndex--;
       final prevSong = _queue[_currentIndex];
+      debugPrint('⏮️ Playing previous song: ${prevSong.title} (index $_currentIndex)');
       await playHiResSong(prevSong);
+    } else {
+      // Jika di awal, restart lagu dari awal
+      debugPrint('⏮️ At first song, restarting from beginning');
+      await seekTo(Duration.zero);
     }
   }
 

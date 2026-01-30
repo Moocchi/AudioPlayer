@@ -38,16 +38,34 @@ class PlaybackService : Service() {
                 showNotification(currentAlbumArt)
             }
         }
+        
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            android.util.Log.d("PlaybackService", "🎭 Playback state changed: $playbackState")
+            // Update notification on state changes to keep it visible
+            if (currentTitle.isNotEmpty() && playbackState != Player.STATE_IDLE) {
+                showNotification(currentAlbumArt)
+            }
+        }
     }
 
+    // Callback interface untuk komunikasi dengan ExoPlayerPlugin
+    interface SkipCallback {
+        fun onSkipNext()
+        fun onSkipPrevious()
+    }
+    
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "iqbal_hires_playback"
         const val ACTION_PLAY = "play"
         const val ACTION_PAUSE = "pause"
+        const val ACTION_NEXT = "next"
+        const val ACTION_PREVIOUS = "previous"
         
         var instance: PlaybackService? = null
             private set
+        
+        var skipCallback: SkipCallback? = null
     }
 
     override fun onCreate() {
@@ -62,7 +80,7 @@ class PlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         android.util.Log.d("PlaybackService", "✅ PlaybackService onStartCommand, action: ${intent?.action}")
         
-        // Handle play/pause actions from notification
+        // Handle play/pause/skip actions from notification
         when (intent?.action) {
             ACTION_PLAY -> {
                 android.util.Log.d("PlaybackService", "▶️ Play action received")
@@ -71,6 +89,14 @@ class PlaybackService : Service() {
             ACTION_PAUSE -> {
                 android.util.Log.d("PlaybackService", "⏸️ Pause action received")
                 player?.pause()
+            }
+            ACTION_NEXT -> {
+                android.util.Log.d("PlaybackService", "⏭️ Next action received")
+                skipCallback?.onSkipNext()
+            }
+            ACTION_PREVIOUS -> {
+                android.util.Log.d("PlaybackService", "⏮️ Previous action received")
+                skipCallback?.onSkipPrevious()
             }
         }
         
@@ -174,6 +200,14 @@ class PlaybackService : Service() {
         val isPlaying = player?.isPlaying ?: false
         android.util.Log.d("PlaybackService", "📢 showNotification: isPlaying=$isPlaying, title=$currentTitle")
         
+        // Previous action
+        val previousAction = NotificationCompat.Action(
+            R.drawable.ic_previous,
+            "Previous",
+            createActionPendingIntent(ACTION_PREVIOUS)
+        )
+        
+        // Play/Pause action
         val playPauseAction = if (isPlaying) {
             NotificationCompat.Action(
                 R.drawable.ic_pause,
@@ -187,6 +221,13 @@ class PlaybackService : Service() {
                 createActionPendingIntent(ACTION_PLAY)
             )
         }
+        
+        // Next action
+        val nextAction = NotificationCompat.Action(
+            R.drawable.ic_next,
+            "Next",
+            createActionPendingIntent(ACTION_NEXT)
+        )
         
         val contentIntent = PendingIntent.getActivity(
             this,
@@ -202,18 +243,21 @@ class PlaybackService : Service() {
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
             .setLargeIcon(albumArt)
-            .addAction(playPauseAction)
+            .addAction(previousAction)  // Index 0
+            .addAction(playPauseAction) // Index 1
+            .addAction(nextAction)      // Index 2
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setContentIntent(contentIntent)
-            .setOngoing(isPlaying) // Only ongoing when playing
+            .setOngoing(true) // Always ongoing to prevent dismissal
         
         // Add MediaStyle if MediaSession is available
+        // Show Previous (0), Play/Pause (1), Next (2) in compact view
         mediaSession?.let { session ->
             notificationBuilder.setStyle(
                 MediaNotificationCompat.MediaStyle()
                     .setMediaSession(session.sessionCompatToken)
-                    .setShowActionsInCompactView(0)
+                    .setShowActionsInCompactView(0, 1, 2)
             )
         }
         

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
 import '../services/exoplayer_service.dart';
 import '../theme/app_theme.dart';
@@ -41,7 +42,7 @@ class MiniPlayer extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Progress bar
+                // Progress bar - no animation for normal updates
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                   child: StreamBuilder<Duration>(
@@ -50,8 +51,26 @@ class MiniPlayer extends StatelessWidget {
                       final position = snapshot.data ?? Duration.zero;
                       final duration = audio.duration;
                       final progress = duration.inMilliseconds > 0
-                          ? position.inMilliseconds / duration.inMilliseconds
+                          ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
                           : 0.0;
+                      
+                      // Animate on song end only if we have meaningful progress
+                      if (audio.isSongEnding && progress > 0.1) {
+                        return TweenAnimationBuilder<double>(
+                          key: ValueKey('mini_anim_${audio.currentSong?.id ?? 0}'),
+                          tween: Tween(begin: progress, end: 0.0),
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, animatedValue, child) {
+                            return LinearProgressIndicator(
+                              value: animatedValue,
+                              backgroundColor: AppTheme.divider,
+                              valueColor: const AlwaysStoppedAnimation(AppTheme.primary),
+                              minHeight: 3,
+                            );
+                          },
+                        );
+                      }
                       
                       return LinearProgressIndicator(
                         value: progress,
@@ -66,17 +85,29 @@ class MiniPlayer extends StatelessWidget {
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     children: [
-                      // Album art
+                      // Album art with caching
                       Hero(
                         tag: 'album_art_${song.id}',
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(10),
                           child: song.albumCover != null
-                              ? Image.network(
-                                  song.albumCover!,
+                              ? CachedNetworkImage(
+                                  imageUrl: song.albumCover!,
                                   width: 48,
                                   height: 48,
                                   fit: BoxFit.cover,
+                                  placeholder: (context, url) => Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: AppTheme.divider,
+                                    child: const Icon(Icons.music_note, size: 24),
+                                  ),
+                                  errorWidget: (context, url, error) => Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: AppTheme.divider,
+                                    child: const Icon(Icons.music_note),
+                                  ),
                                 )
                               : Container(
                                   width: 48,

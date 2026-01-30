@@ -31,7 +31,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 
-class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
+class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, PlaybackService.SkipCallback {
     private lateinit var context: Context
     private lateinit var channel: MethodChannel
     private lateinit var eventChannel: EventChannel
@@ -40,11 +40,25 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener {
     private var exoPlayer: ExoPlayer? = null
     private var currentManifest: DashManifest? = null
     private val handler = Handler(Looper.getMainLooper())
+    
+    // SkipCallback implementation - send events to Flutter
+    override fun onSkipNext() {
+        android.util.Log.d("ExoPlayer", "⏭️ Skip Next triggered from notification")
+        sendEvent("skip_next", mapOf("action" to "next"))
+    }
+    
+    override fun onSkipPrevious() {
+        android.util.Log.d("ExoPlayer", "⏮️ Skip Previous triggered from notification")
+        sendEvent("skip_previous", mapOf("action" to "previous"))
+    }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         context = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "exoplayer")
         channel.setMethodCallHandler(this)
+        
+        // Register as SkipCallback
+        PlaybackService.skipCallback = this
         
         // Start PlaybackService as regular service (not foreground yet)
         val serviceIntent = Intent(context, PlaybackService::class.java)

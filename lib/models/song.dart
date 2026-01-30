@@ -58,25 +58,54 @@ class Song {
   }
 
   factory Song.fromJson(Map<String, dynamic> json) {
-    List mediaTags = json['mediaMetadata']?['tags'] is List 
-        ? json['mediaMetadata']['tags'] 
-        : [];
-    
-    String? coverUrl;
-    if (json['album']?['cover'] != null) {
-      coverUrl = 'https://resources.tidal.com/images/${json['album']['cover'].toString().replaceAll('-', '/')}/640x640.jpg';
-    }
+    // Check if this is from API or from local storage
+    if (json.containsKey('mediaMetadata') || json.containsKey('album')) {
+      // From API
+      List mediaTags = json['mediaMetadata']?['tags'] is List 
+          ? json['mediaMetadata']['tags'] 
+          : [];
+      
+      String? coverUrl;
+      if (json['album']?['cover'] != null) {
+        coverUrl = 'https://resources.tidal.com/images/${json['album']['cover'].toString().replaceAll('-', '/')}/640x640.jpg';
+      }
 
-    return Song(
-      id: json['id'].toString(),
-      title: json['title'] ?? 'Unknown',
-      artist: (json['artists'] as List?)?.map((a) => a['name']).join(', ') ?? 'Unknown Artist',
-      albumTitle: json['album']?['title'] ?? 'Unknown Album',
-      albumCover: coverUrl,
-      duration: json['duration'] ?? 0,
-      isHiRes: mediaTags.contains("HIRES_LOSSLESS"),
-      mediaTags: List<String>.from(mediaTags),
-    );
+      return Song(
+        id: json['id'].toString(),
+        title: json['title'] ?? 'Unknown',
+        artist: (json['artists'] as List?)?.map((a) => a['name']).join(', ') ?? 'Unknown Artist',
+        albumTitle: json['album']?['title'] ?? 'Unknown Album',
+        albumCover: coverUrl,
+        duration: json['duration'] ?? 0,
+        isHiRes: mediaTags.contains("HIRES_LOSSLESS"),
+        mediaTags: List<String>.from(mediaTags),
+      );
+    } else {
+      // From local storage
+      return Song(
+        id: json['id'].toString(),
+        title: json['title'] ?? 'Unknown',
+        artist: json['artist'] ?? 'Unknown Artist',
+        albumTitle: json['albumTitle'] ?? 'Unknown Album',
+        albumCover: json['albumCover'],
+        duration: json['duration'] ?? 0,
+        isHiRes: json['isHiRes'] ?? false,
+        mediaTags: List<String>.from(json['mediaTags'] ?? []),
+      );
+    }
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'artist': artist,
+      'albumTitle': albumTitle,
+      'albumCover': albumCover,
+      'duration': duration,
+      'isHiRes': isHiRes,
+      'mediaTags': mediaTags,
+    };
   }
 
   String get durationFormatted {

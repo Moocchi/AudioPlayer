@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/home_screen.dart';
 import 'services/exoplayer_service.dart';
+import 'services/play_history_service.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize ExoPlayer service singleton
+  // Initialize services
   ExoPlayerService();
+  await PlayHistoryService().init();
   
   // Set status bar style
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(

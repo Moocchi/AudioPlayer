@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
 import '../services/exoplayer_service.dart';
 import '../theme/app_theme.dart';
@@ -12,9 +13,10 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderStateMixin {
   bool _isDragging = false;
   double _dragValue = 0.0;
+  double _previousSliderValue = 0.0;
   
   static const double albumSize = 290;
 
@@ -153,9 +155,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: song.albumCover != null
-                ? Image.network(
-                    song.albumCover!,
+                ? CachedNetworkImage(
+                    imageUrl: song.albumCover!,
                     fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                      color: AppTheme.divider,
+                      child: const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      color: AppTheme.divider,
+                      child: const Icon(
+                        Icons.music_note_rounded,
+                        size: 80,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
                   )
                 : Container(
                     color: AppTheme.divider,
@@ -291,14 +307,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
             : streamPosition;
         
         // Calculate slider value
-        final sliderValue = _isDragging
+        final targetSliderValue = _isDragging
             ? _dragValue
             : (streamPosition.inMilliseconds / duration.inMilliseconds)
                 .clamp(0.0, 1.0);
+        
+        // Use isSongEnding flag from service for reliable animation trigger
+        // Only animate if we have a meaningful previous position (> 0.1)
+        final shouldAnimate = audio.isSongEnding && !_isDragging && _previousSliderValue > 0.1;
+        
+        // Store for animation begin value before updating
+        final animBeginValue = _previousSliderValue;
+        
+        // Update previous value for next frame
+        if (!audio.isSongEnding) {
+          _previousSliderValue = targetSliderValue;
+        }
 
         return Column(
           children: [
-            // Slider - drag updates visual, only seek on release
+            // Slider - only animate on song end
             SliderTheme(
               data: SliderThemeData(
                 trackHeight: 4,
@@ -309,30 +337,42 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 thumbColor: AppTheme.primary,
                 overlayColor: AppTheme.primary.withOpacity(0.2),
               ),
-              child: Slider(
-                value: sliderValue,
-                onChanged: (value) {
-                  // Update UI during drag without seeking
-                  setState(() {
-                    _isDragging = true;
-                    _dragValue = value;
-                  });
-                },
-                onChangeEnd: (value) async {
-                  // Only seek when user releases slider
-                  final newPosition = Duration(
-                    milliseconds: (value * duration.inMilliseconds).round(),
-                  );
-                  await audio.seek(newPosition);
-                  
-                  // Resume normal stream updates immediately (no delay)
-                  if (mounted) {
-                    setState(() {
-                      _isDragging = false;
-                    });
-                  }
-                },
-              ),
+              child: shouldAnimate
+                  // Animated slider only for song end reset
+                  ? TweenAnimationBuilder<double>(
+                      key: ValueKey('song_end_anim_${audio.currentSong?.id ?? 0}'),
+                      tween: Tween(begin: animBeginValue, end: 0.0),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, animatedValue, child) {
+                        return Slider(
+                          value: animatedValue,
+                          onChanged: null, // Disabled during animation
+                        );
+                      },
+                    )
+                  // Normal slider without animation
+                  : Slider(
+                      value: targetSliderValue,
+                      onChanged: (value) {
+                        setState(() {
+                          _isDragging = true;
+                          _dragValue = value;
+                        });
+                      },
+                      onChangeEnd: (value) async {
+                        final newPosition = Duration(
+                          milliseconds: (value * duration.inMilliseconds).round(),
+                        );
+                        await audio.seek(newPosition);
+                        
+                        if (mounted) {
+                          setState(() {
+                            _isDragging = false;
+                          });
+                        }
+                      },
+                    ),
             ),
             // Time labels - update in real-time including during drag
             Padding(
