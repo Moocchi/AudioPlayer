@@ -36,7 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             
             // Mini player
-            const MiniPlayer(),
+
           ],
         ),
       ),

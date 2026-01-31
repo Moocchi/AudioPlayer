@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/mini_player.dart';
@@ -38,7 +39,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
             ),
             
             // Mini player
-            const MiniPlayer(),
+
           ],
         ),
       ),
@@ -50,16 +51,24 @@ class _CollectionScreenState extends State<CollectionScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         // Liked Songs Item
-        _buildCollectionItem(
-          title: 'Liked Songs',
-          subtitle: '${LikedSongsService().songCount} songs',
-          icon: Icons.favorite_rounded,
-          gradientColors: [Colors.purple.shade800, Colors.blue.shade800],
-          onTap: () {
-            Navigator.push(
-              context, 
-              MaterialPageRoute(builder: (context) => const LikedSongsScreen()),
-            ).then((_) => setState(() {})); // Refresh count on back
+        // Liked Songs Item
+        ListenableBuilder(
+          listenable: LikedSongsService(),
+          builder: (context, _) {
+            final service = LikedSongsService();
+            return _buildCollectionItem(
+              title: 'Liked Songs',
+              subtitle: '${service.songCount} songs',
+              icon: Icons.favorite_rounded,
+              gradientColors: [Colors.purple.shade800, Colors.blue.shade800],
+              imagePath: service.playlistCoverPath,
+              onTap: () {
+                Navigator.push(
+                  context, 
+                  MaterialPageRoute(builder: (context) => const LikedSongsScreen()),
+                );
+              },
+            );
           },
         ),
         
@@ -74,6 +83,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
     required IconData icon,
     required List<Color> gradientColors,
     required VoidCallback onTap,
+    String? imagePath,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -91,19 +101,23 @@ class _CollectionScreenState extends State<CollectionScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
+                gradient: imagePath == null ? LinearGradient(
                   colors: gradientColors,
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                ),
+                ) : null,
+                image: imagePath != null ? DecorationImage(
+                  image: FileImage(File(imagePath)),
+                  fit: BoxFit.cover,
+                ) : null,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(8),
                   bottomLeft: Radius.circular(8),
                 ),
               ),
-              child: Center(
+              child: imagePath == null ? Center(
                 child: Icon(icon, color: Colors.white, size: 32),
-              ),
+              ) : null,
             ),
             
             const SizedBox(width: 16),

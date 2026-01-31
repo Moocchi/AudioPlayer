@@ -369,6 +369,22 @@ class _HomeContentState extends State<_HomeContent> {
                   // Title with badge
                   Row(
                     children: [
+                      Expanded(
+                        child: MarqueeText(
+                          text: song.title,
+                          style: TextStyle(
+                            color: isPlaying ? AppTheme.primary : AppTheme.textPrimary,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  // Artist and duration
+                  Row(
+                    children: [
                       if (song.isHiRes) ...[
                         const AnimatedHiResBadge(),
                         const SizedBox(width: 6),
@@ -390,22 +406,6 @@ class _HomeContentState extends State<_HomeContent> {
                         ),
                         const SizedBox(width: 6),
                       ],
-                      Expanded(
-                        child: MarqueeText(
-                          text: song.title,
-                          style: TextStyle(
-                            color: isPlaying ? AppTheme.primary : AppTheme.textPrimary,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  // Artist and duration
-                  Row(
-                    children: [
                       Expanded(
                         child: Text(
                           song.artist,

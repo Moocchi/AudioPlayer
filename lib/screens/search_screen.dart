@@ -88,7 +88,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
             
             // Mini player
-            const MiniPlayer(),
+
           ],
         ),
       ),

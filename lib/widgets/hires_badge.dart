@@ -49,3 +49,27 @@ class AnimatedHiResBadge extends StatelessWidget {
     );
   }
 }
+
+/// Lossless Quality Badge
+class LosslessBadge extends StatelessWidget {
+  const LosslessBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1DB954), // Spotify Green
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Text(
+        'Lossless',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}

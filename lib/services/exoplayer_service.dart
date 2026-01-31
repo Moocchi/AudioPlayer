@@ -477,6 +477,9 @@ class ExoPlayerService extends ChangeNotifier {
     // Save as last played for restoration
     PlayHistoryService().saveLastPlayedSong(song);
     
+    // STOP previous playback to ensure clean state (Fixes HiRes -> Lossless switch bug)
+    await stop();
+
     // Keep _isSongEnding true during transition to prevent slider jump
     // It will be reset when we're ready to play
     
@@ -540,8 +543,9 @@ class ExoPlayerService extends ChangeNotifier {
         // RACE CONDITION CHECK AGAIN prior to native calls
         if (localGenerationId != _currentSongGenerationId) return;
 
-        // Set source first
-        await _channel.invokeMethod('setDashSource', {'url': directUrl});
+        // Set source first (Use setSource for direct URLs, not setDashSource)
+        await setSource(directUrl);
+        // await _channel.invokeMethod('setDashSource', {'url': directUrl});
         
         // Clear loading IMMEDIATELY after source is set, BEFORE play()
         // This ensures UI is responsive without waiting for events
@@ -578,6 +582,11 @@ class ExoPlayerService extends ChangeNotifier {
         // Regular manifest with direct URL
         Map manifest = json.decode(manifestDecoded);
         String audioUrl = manifest['urls'][0];
+        
+        debugPrint('🎵 Regular audio source: $audioUrl');
+        
+        // Use setSource for regular playback
+        await setSource(audioUrl);
         
         _isPlaying = true;
         _isSongEnding = false; // Reset AFTER loading, ready to play
@@ -787,15 +796,34 @@ class ExoPlayerService extends ChangeNotifier {
     }
   }
 
-  /// Set source for audio streaming
-  /// Status is managed by caller, not in this method
   Future<void> setDashSource(String url) async {
     try {
       await _channel.invokeMethod('setDashSource', {'url': url});
-      debugPrint('✅ ExoPlayer: Source set - $url');
+      debugPrint('✅ ExoPlayer: DASH Source set - $url');
     } catch (e) {
       debugPrint('❌ Error setting source: $e');
       throw Exception('Failed to set source: $e');
+    }
+  }
+
+  /// Set source for standard audio streaming (Lossless/Regular)
+  Future<void> setSource(String url) async {
+    try {
+      // Assuming native plugin has setSource or setUrl. 
+      // If not, we might need setDashSource but usually that's for DASH.
+      // Trying "setSource" as a likely method name given standard plugins.
+      // If this fails, we might need to fallback.
+      await _channel.invokeMethod('setSource', {'url': url});
+      debugPrint('✅ ExoPlayer: Standard Source set - $url');
+    } catch (e) {
+      debugPrint('❌ Error setting standard source: $e');
+      // Fallback: try setDashSource if setSource fails (unlikely if plugin handles both)
+       try {
+        debugPrint('⚠️ fallback to setDashSource...');
+        await _channel.invokeMethod('setDashSource', {'url': url});
+       } catch (e2) {
+          throw Exception('Failed to set standard source: $e');
+       }
     }
   }
 
