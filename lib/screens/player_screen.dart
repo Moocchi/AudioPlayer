@@ -13,12 +13,55 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderStateMixin {
+class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMixin {
   bool _isDragging = false;
   double _dragValue = 0.0;
   double _previousSliderValue = 0.0;
+  String? _lastSongId; // Track song changes
   
   static const double albumSize = 290;
+  
+  // Entrance animations
+  late AnimationController _entranceController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _entranceController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+    
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
+      ),
+    );
+    
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0.0, 0.3),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
+      ),
+    );
+    
+    // Start animation after Hero completes
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) _entranceController.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _entranceController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +76,14 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
             body: Center(child: Text('No song playing')),
           );
         }
+        
+        // Reset slider state when song changes
+        if (_lastSongId != song.id) {
+          _lastSongId = song.id;
+          _previousSliderValue = 0.0;
+          _isDragging = false;
+          _dragValue = 0.0;
+        }
 
         return Scaffold(
           backgroundColor: AppTheme.background,
@@ -41,33 +92,63 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 children: [
-                  // Header
-                  _buildHeader(context, audio),
+                  // Header - animated
+                  SlideTransition(
+                    position: _slideAnimation,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: _buildHeader(context, audio),
+                    ),
+                  ),
                   
                   const SizedBox(height: 20),
                   
-                  // Album art - fixed size, square
+                  // Album art - Hero handles animation
                   _buildAlbumArt(song, albumSize),
                   
                   const SizedBox(height: 32),
                   
-                  // Song info
-                  _buildSongInfo(song, albumSize),
+                  // Song info - animated slide up + fade
+                  SlideTransition(
+                    position: _slideAnimation,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: _buildSongInfo(song, albumSize),
+                    ),
+                  ),
                   
                   const SizedBox(height: 24),
                   
-                  // Progress slider
-                  _buildProgressSlider(audio),
+                  // Progress slider - animated
+                  SlideTransition(
+                    position: _slideAnimation,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: _buildProgressSlider(audio),
+                    ),
+                  ),
                   
                   const SizedBox(height: 16),
                   
-                  // Controls
-                  _buildControls(audio),
+                  // Controls - animated
+                  SlideTransition(
+                    position: _slideAnimation,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: _buildControls(audio),
+                    ),
+                  ),
                   
                   const Spacer(),
                   
-                  // Tab bar (disabled for now)
-                  _buildTabBar(),
+                  // Tab bar - animated
+                  SlideTransition(
+                    position: _slideAnimation,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: _buildTabBar(),
+                    ),
+                  ),
                   
                   const SizedBox(height: 16),
                 ],

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
-import '../services/audio_service.dart';
+import '../services/exoplayer_service.dart';
 import '../theme/app_theme.dart';
 
 class QueueSheet extends StatelessWidget {
@@ -18,9 +18,9 @@ class QueueSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: AudioService(),
+      listenable: ExoPlayerService(),
       builder: (context, _) {
-        final audio = AudioService();
+        final audio = ExoPlayerService();
         final queue = audio.queue;
         final currentIndex = audio.currentIndex;
 

@@ -18,8 +18,11 @@ class PlayHistoryService extends ChangeNotifier {
   // Play count map: songId -> playCount
   Map<String, int> _playCount = {};
   
-  // Cached songs with their data
+  // Cached songs with their data (LIVE - updates constantly)
   List<Song> _frequentSongs = [];
+  
+  // Session snapshot of frequent songs (STABLE - only updates on app restart)
+  List<Song> _sessionFrequentSongs = [];
   
   // Shuffled songs for Quick Shortcuts (randomized on init)
   List<Song> _shuffledSongs = [];
@@ -27,7 +30,8 @@ class PlayHistoryService extends ChangeNotifier {
   // Recent albums: albumTitle -> albumCover
   List<Map<String, String>> _recentAlbums = [];
 
-  List<Song> get frequentSongs => _frequentSongs;
+  // Return the SESSION snapshot so UI doesn't jump around
+  List<Song> get frequentSongs => _sessionFrequentSongs;
   List<Song> get shuffledSongs => _shuffledSongs;
   List<Map<String, String>> get recentAlbums => _recentAlbums;
 
@@ -35,6 +39,9 @@ class PlayHistoryService extends ChangeNotifier {
   Future<void> init() async {
     await _loadHistory();
     await _loadAlbums();
+    
+    // Initialize session snapshot once
+    _sessionFrequentSongs = List.from(_frequentSongs);
   }
 
   /// Record a song play
@@ -42,7 +49,7 @@ class PlayHistoryService extends ChangeNotifier {
     // Update play count
     _playCount[song.id] = (_playCount[song.id] ?? 0) + 1;
     
-    // Update frequent songs list
+    // Update frequent songs list (background only)
     _updateFrequentSongs(song);
     
     // Update recent albums
@@ -52,6 +59,8 @@ class PlayHistoryService extends ChangeNotifier {
     await _saveHistory();
     await _saveAlbums();
     
+    // Notify listeners so UI updates (e.g. play counts if shown), 
+    // but frequentSongs getter returns the stable list
     notifyListeners();
     debugPrint('📊 Recorded play: ${song.title} (count: ${_playCount[song.id]})');
   }
@@ -160,6 +169,32 @@ class PlayHistoryService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Error saving history: $e');
     }
+  }
+
+  // --- Last Played Song Persistence ---
+
+  static const String _lastSongKey = 'last_played_song';
+
+  Future<void> saveLastPlayedSong(Song song) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastSongKey, json.encode(song.toJson()));
+    } catch (e) {
+      debugPrint('❌ Error saving last song: $e');
+    }
+  }
+
+  Future<Song?> getLastPlayedSong() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final songJson = prefs.getString(_lastSongKey);
+      if (songJson != null) {
+        return Song.fromJson(json.decode(songJson));
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading last song: $e');
+    }
+    return null;
   }
 
   Future<void> _loadAlbums() async {

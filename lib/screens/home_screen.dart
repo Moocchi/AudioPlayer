@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
 import '../services/exoplayer_service.dart';
@@ -7,6 +8,9 @@ import '../theme/app_theme.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/hires_badge.dart';
 import '../widgets/marquee_text.dart';
+import '../widgets/marquee_text.dart';
+import '../widgets/expandable_player.dart'; // New Import
+import '../widgets/mini_equalizer.dart'; // New Import
 import 'player_screen.dart';
 import 'search_screen.dart';
 import 'collection_screen.dart';
@@ -21,6 +25,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  final GlobalKey<ExpandablePlayerState> _playerKey = GlobalKey<ExpandablePlayerState>();
   
   final List<Widget> _screens = [
     const _HomeContent(),
@@ -31,13 +36,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+
+        // Check player state
+        final playerState = _playerKey.currentState;
+        if (playerState != null && playerState.isExpanded) {
+          playerState.collapse();
+          return;
+        }
+
+        // Standard exit behavior
+        SystemNavigator.pop();
+      },
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor: AppTheme.background,
+            body: IndexedStack(
+              index: _currentIndex,
+              children: _screens,
+            ),
+            bottomNavigationBar: _buildBottomNav(),
+          ),
+          ExpandablePlayer(key: _playerKey),
+        ],
       ),
-      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
@@ -47,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
         color: AppTheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -129,26 +155,7 @@ class _HomeContentState extends State<_HomeContent> {
   void _playSong(Song song, int index, List<Song> songs) {
     _audio.playQueue(songs, index);
     _history.recordPlay(song);
-    
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, _) => const PlayerScreen(),
-        transitionsBuilder: (context, animation, _, child) {
-          return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            )),
-            child: child,
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 400),
-      ),
-    );
+    // Navigation removed - ExpandablePlayer handles it
   }
 
   @override
@@ -189,9 +196,6 @@ class _HomeContentState extends State<_HomeContent> {
                 },
               ),
             ),
-            
-            // Mini player
-            const MiniPlayer(),
           ],
         ),
       ),
@@ -234,17 +238,17 @@ class _HomeContentState extends State<_HomeContent> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
           child: Text(
-            'Quick picks',
+            'Pilihan cepat',
             style: AppTheme.heading2.copyWith(fontSize: 20),
           ),
         ),
         SizedBox(
-          height: 280, // 4 items * 70 height each
+          height: 296, // Increased height for larger items (4 items * 74 height)
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.only(left: 16),
             itemCount: totalColumns,
             itemBuilder: (context, columnIndex) {
               return _buildQuickPickColumn(songs, columnIndex, itemsPerColumn);
@@ -260,9 +264,15 @@ class _HomeContentState extends State<_HomeContent> {
     final endIndex = (startIndex + itemsPerColumn).clamp(0, songs.length);
     final columnSongs = songs.sublist(startIndex, endIndex);
     
-    return SizedBox(
-      width: 300,
+    // Protect against negative width during layout transitions
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = (screenWidth - 48).clamp(0.0, double.infinity);
+
+    return Container(
+      width: cardWidth,
+      margin: const EdgeInsets.only(right: 16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: columnSongs.asMap().entries.map((entry) {
           final index = startIndex + entry.key;
           final song = entry.value;
@@ -279,19 +289,19 @@ class _HomeContentState extends State<_HomeContent> {
       onTap: () => _playSong(song, index, songs),
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        height: 68,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        height: 72, // Increased item height
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8), // More vertical padding
         child: Row(
           children: [
             // Album art
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(6), // Slightly more rounded
                   child: song.albumCover != null
                       ? CachedNetworkImage(
                           imageUrl: song.albumCover!,
-                          width: 56,
+                          width: 56, // Increased Image size
                           height: 56,
                           fit: BoxFit.cover,
                           placeholder: (context, url) => Container(
@@ -309,29 +319,27 @@ class _HomeContentState extends State<_HomeContent> {
                         )
                       : Container(
                           width: 56,
-                          height: 56,
+                          height: 56, // Increased size
+
                           color: AppTheme.divider,
-                          child: const Icon(Icons.music_note, size: 24),
+                          child: const Icon(Icons.music_note, size: 20),
                         ),
                 ),
                 // Playing indicator
+                // Playing indicator (Equalizer)
+                // Playing indicator (Equalizer)
                 if (isPlaying)
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Icon(
-                        Icons.play_arrow,
-                        color: Colors.white,
-                        size: 24,
-                      ),
+                  const Positioned(
+                    right: 4,
+                    bottom: 4,
+                    child: MiniEqualizer(
+                      size: 14,
+                      color: Colors.white,
                     ),
                   ),
               ],
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             // Song info
             Expanded(
               child: Column(
@@ -387,7 +395,7 @@ class _HomeContentState extends State<_HomeContent> {
                         ),
                       ),
                       Text(
-                        ' • ${song.durationFormatted}',
+                        ' ${song.durationFormatted}',
                         style: AppTheme.caption.copyWith(fontSize: 12),
                       ),
                     ],
@@ -418,17 +426,17 @@ class _HomeContentState extends State<_HomeContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
           child: Text(
-            'Quick Shortcuts',
-            style: AppTheme.heading2.copyWith(fontSize: 20),
+            'Pintasan cepat',
+            style: AppTheme.heading2.copyWith(fontSize: 18),
           ),
         ),
         // Song grid pages
         SizedBox(
-          height: 340,
+          height: 350,
           child: PageView.builder(
             controller: _albumPageController,
             itemCount: totalPages,
@@ -477,8 +485,8 @@ class _HomeContentState extends State<_HomeContent> {
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
           childAspectRatio: 1.0,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
+          crossAxisSpacing: 4,
+          mainAxisSpacing: 4,
         ),
         itemCount: songs.length,
         itemBuilder: (context, index) {
@@ -495,7 +503,7 @@ class _HomeContentState extends State<_HomeContent> {
     return GestureDetector(
       onTap: () => _playSong(song, index, songs),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(4),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -505,32 +513,21 @@ class _HomeContentState extends State<_HomeContent> {
               fit: BoxFit.cover,
               placeholder: (context, url) => Container(
                 color: AppTheme.divider,
-                child: const Icon(Icons.music_note, size: 32),
+                child: const Icon(Icons.music_note, size: 24),
               ),
               errorWidget: (context, url, error) => Container(
                 color: AppTheme.divider,
-                child: const Icon(Icons.music_note, size: 32),
+                child: const Icon(Icons.music_note, size: 24),
               ),
             ),
-            // Playing overlay
-            if (isPlaying)
-              Container(
-                color: Colors.black.withOpacity(0.4),
-                child: const Center(
-                  child: Icon(
-                    Icons.play_arrow,
-                    color: Colors.white,
-                    size: 32,
-                  ),
-                ),
-              ),
+
             // Gradient overlay at bottom
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
               child: Container(
-                height: 36,
+                height: 30,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -545,15 +542,15 @@ class _HomeContentState extends State<_HomeContent> {
             ),
             // Song title inside
             Positioned(
-              left: 6,
-              right: 6,
-              bottom: 6,
+              left: 4,
+              right: 4,
+              bottom: 4,
               child: MarqueeText(
                 text: song.title,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
                   shadows: [
                     Shadow(
                       color: Colors.black,

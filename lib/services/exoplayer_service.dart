@@ -7,6 +7,11 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import 'play_history_service.dart';
+import '../models/loop_mode.dart'; // Import LoopMode
+
+
+
+
 
 /// Local HTTP server for serving DASH manifests
 class LocalManifestServer {
@@ -98,6 +103,41 @@ class ExoPlayerService extends ChangeNotifier {
   int _currentIndex = -1;
   bool _isLoading = false;
   String _loadingStatus = '';
+
+  // Playback Modes
+  bool _isShuffleMode = false;
+  LoopMode _loopMode = LoopMode.off;
+
+  bool get isShuffleMode => _isShuffleMode;
+  LoopMode get loopMode => _loopMode;
+
+  void toggleShuffle() {
+    _isShuffleMode = !_isShuffleMode;
+    if (_isShuffleMode) {
+      // Logic to shuffle queue would go here
+      // For now just UI toggle
+    } else {
+      // Logic to restore queue
+    }
+    notifyListeners();
+  }
+
+  void toggleLoop() {
+    switch (_loopMode) {
+      case LoopMode.off:
+        _loopMode = LoopMode.all;
+        break;
+      case LoopMode.all:
+        _loopMode = LoopMode.one;
+        break;
+      case LoopMode.one:
+        _loopMode = LoopMode.off;
+        break;
+    }
+    notifyListeners();
+  }
+
+
   
   // Player state
   bool _isPlaying = false;
@@ -107,6 +147,9 @@ class ExoPlayerService extends ChangeNotifier {
   
   // Song ending state for smooth animation
   bool _isSongEnding = false;
+  
+  // Block position updates during song transition
+  bool _isTransitioning = false;
   
   // Position stream with periodic updates
   late Stream<Duration> positionStream;
@@ -181,12 +224,27 @@ class ExoPlayerService extends ChangeNotifier {
     
     // Start periodic position updates every 100ms for smooth UI updates
     _startPeriodicPositionUpdates();
+    
+    // Restore last played song (but don't play it)
+    _restoreLastPlayedSong();
+  }
+  
+  Future<void> _restoreLastPlayedSong() async {
+    final lastSong = await PlayHistoryService().getLastPlayedSong();
+    if (lastSong != null) {
+      _currentSong = lastSong;
+      debugPrint('💾 Restored last played song: ${lastSong.title}');
+      notifyListeners();
+    }
   }
   
   void _startPeriodicPositionUpdates() {
     _periodicUpdateTimer?.cancel();
     // Reduced from 100ms to 500ms for better performance
     _periodicUpdateTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      // Don't update position during song transition to prevent slider jump
+      if (_isTransitioning) return;
+      
       _updatePositionOnly(); // Only update position, don't notify
       // Emit position through stream for UI
       if (_positionController != null && !_positionController!.isClosed) {
@@ -350,10 +408,14 @@ class ExoPlayerService extends ChangeNotifier {
   Future<void> _handleSongEnded() async {
     debugPrint('🏁 _handleSongEnded: queue.length=${_queue.length}, currentIndex=$_currentIndex');
     
+    // Block position updates during transition
+    _isTransitioning = true;
+    
     // Set song ending flag for UI animation
     _isSongEnding = true;
     _isPlaying = false;
     _position = Duration.zero; // Reset position immediately
+    _duration = Duration.zero; // Also reset duration
     notifyListeners();
     
     // Emit zero position for smooth animation
@@ -375,6 +437,7 @@ class ExoPlayerService extends ChangeNotifier {
       // No more songs - reset flag and stay at zero
       debugPrint('🔄 No more songs, staying at zero');
       _isSongEnding = false;
+      _isTransitioning = false;
       seekTo(Duration.zero);
       notifyListeners();
     }
@@ -399,11 +462,20 @@ class ExoPlayerService extends ChangeNotifier {
     debugPrint('✅ Position reset to zero');
   }
 
+    // Generation ID to handle race conditions (rapid song switching)
+  int _currentSongGenerationId = 0;
+
   Future<void> playHiResSong(Song song) async {
-    debugPrint('🎵 Playing Hi-Res song: ${song.title}');
+    // Increment generation ID for the new request
+    _currentSongGenerationId++;
+    final int localGenerationId = _currentSongGenerationId;
+
+    debugPrint('🎵 Playing Hi-Res song: ${song.title} (Gen: $localGenerationId)');
     
     // Record play in history
     PlayHistoryService().recordPlay(song);
+    // Save as last played for restoration
+    PlayHistoryService().saveLastPlayedSong(song);
     
     // Keep _isSongEnding true during transition to prevent slider jump
     // It will be reset when we're ready to play
@@ -438,6 +510,12 @@ class ExoPlayerService extends ChangeNotifier {
       debugPrint('🌐 API Request: $url');
       
       var res = await http.get(url);
+
+      // RACE CONDITION CHECK: If another song started while we were waiting, ABORT.
+      if (localGenerationId != _currentSongGenerationId) {
+        debugPrint('🛑 Play request aborted: Newer song request detected (Gen: $_currentSongGenerationId vs Local: $localGenerationId)');
+        return;
+      }
       
       if (res.statusCode != 200) {
         throw Exception('API Error: ${res.statusCode}');
@@ -459,8 +537,12 @@ class ExoPlayerService extends ChangeNotifier {
         // Fetch actual file size in background (don't await)
         _fetchAndUpdateFileSize(directUrl, song);
         
+        // RACE CONDITION CHECK AGAIN prior to native calls
+        if (localGenerationId != _currentSongGenerationId) return;
+
         // Set source first
         await _channel.invokeMethod('setDashSource', {'url': directUrl});
+        _isSourceSet = true;
         
         // Clear loading IMMEDIATELY after source is set, BEFORE play()
         // This ensures UI is responsive without waiting for events
@@ -468,6 +550,7 @@ class ExoPlayerService extends ChangeNotifier {
         _loadingStatus = '';
         _isPlaying = true;
         _isSongEnding = false; // Reset AFTER loading, ready to play
+        _isTransitioning = false; // Allow position updates again
         notifyListeners();
         debugPrint('✅ Loading cleared before play()');
         
@@ -486,6 +569,9 @@ class ExoPlayerService extends ChangeNotifier {
       
       debugPrint('📄 Manifest MIME type: $manifestMimeType');
       
+       // RACE CONDITION CHECK AGAIN prior to native calls
+      if (localGenerationId != _currentSongGenerationId) return;
+
       if (manifestMimeType == 'application/dash+xml' || manifestDecoded.startsWith('<?xml')) {
         debugPrint("🎵 Hi-Res DASH manifest detected, processing...");
         await _playDashStream(song, manifestDecoded);
@@ -494,19 +580,9 @@ class ExoPlayerService extends ChangeNotifier {
         Map manifest = json.decode(manifestDecoded);
         String audioUrl = manifest['urls'][0];
         
-        debugPrint('🎵 Direct audio URL: $audioUrl');
-        
-        // Fetch actual file size in background
-        _fetchAndUpdateFileSize(audioUrl, song);
-        
-        // Set source first
-        await setDashSource(audioUrl);
-        
-        // Clear loading IMMEDIATELY after source is set
-        _isLoading = false;
-        _loadingStatus = '';
         _isPlaying = true;
         _isSongEnding = false; // Reset AFTER loading, ready to play
+        _isTransitioning = false; // Allow position updates again
         notifyListeners();
         debugPrint('✅ Loading cleared for regular manifest');
         
@@ -521,11 +597,17 @@ class ExoPlayerService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('❌ Error playing Hi-Res song: $e');
-      _isLoading = false;
-      _isSongEnding = false; // Reset on error too
-      _loadingStatus = 'Error: $e';
-      notifyListeners();
+      // Only handle error if we are still the relevant request
+      if (localGenerationId == _currentSongGenerationId) {
+        debugPrint('❌ Error playing Hi-Res song: $e');
+        _isLoading = false;
+        _isSongEnding = false; // Reset on error too
+        _isTransitioning = false; // Allow position updates again
+        _loadingStatus = 'Error: $e';
+        notifyListeners();
+      } else {
+         debugPrint('❌ Error ignored in aborted request: $e');
+      }
     }
   }
 
@@ -602,6 +684,7 @@ class ExoPlayerService extends ChangeNotifier {
       
       // Reset song ending flag NOW - right before play starts
       _isSongEnding = false;
+      _isTransitioning = false; // Allow position updates again
       _isPlaying = true;
       _isLoading = false;
       _loadingStatus = '';
@@ -617,6 +700,8 @@ class ExoPlayerService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Error in DASH stream: $e');
       _isLoading = false;
+      _isSongEnding = false;
+      _isTransitioning = false; // Allow position updates again on error
       _loadingStatus = 'DASH Error: $e';
       notifyListeners();
     }
@@ -766,9 +851,12 @@ class ExoPlayerService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Track if media source is loaded in native player
+  bool _isSourceSet = false;
+
   /// Toggle play/pause - fully reactive, no optimistic updates
   Future<void> togglePlayPause() async {
-    debugPrint('🔄 togglePlayPause called | isPlaying=$_isPlaying');
+    debugPrint('🔄 togglePlayPause called | isPlaying=$_isPlaying | isSourceSet=$_isSourceSet');
     
     // No optimistic update - wait for native event to update _isPlaying
     try {
@@ -776,8 +864,14 @@ class ExoPlayerService extends ChangeNotifier {
         debugPrint('⏸️  Calling pause()...');
         await pause();
       } else {
-        debugPrint('▶️  Calling play()...');
-        await play();
+        // If we have a song but source isn't set (e.g. app restart), load it first
+        if (!_isSourceSet && _currentSong != null) {
+          debugPrint('📥 Source not set, loading song: ${_currentSong!.title}');
+          await playHiResSong(_currentSong!);
+        } else {
+          debugPrint('▶️  Calling play()...');
+          await play();
+        }
       }
       debugPrint('✅ Play/Pause command sent to native');
     } catch (e) {
