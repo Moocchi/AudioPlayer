@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'screens/home_screen.dart';
 import 'services/exoplayer_service.dart';
 import 'services/play_history_service.dart';
+import 'services/liked_songs_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -11,6 +12,7 @@ void main() async {
   // Initialize services
   ExoPlayerService();
   await PlayHistoryService().init();
+  await LikedSongsService().init();
   
   // Set status bar style
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(

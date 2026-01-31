@@ -542,7 +542,6 @@ class ExoPlayerService extends ChangeNotifier {
 
         // Set source first
         await _channel.invokeMethod('setDashSource', {'url': directUrl});
-        _isSourceSet = true;
         
         // Clear loading IMMEDIATELY after source is set, BEFORE play()
         // This ensures UI is responsive without waiting for events
@@ -851,12 +850,9 @@ class ExoPlayerService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Track if media source is loaded in native player
-  bool _isSourceSet = false;
-
   /// Toggle play/pause - fully reactive, no optimistic updates
   Future<void> togglePlayPause() async {
-    debugPrint('🔄 togglePlayPause called | isPlaying=$_isPlaying | isSourceSet=$_isSourceSet');
+    debugPrint('🔄 togglePlayPause called | isPlaying=$_isPlaying | state=$_playbackState');
     
     // No optimistic update - wait for native event to update _isPlaying
     try {
@@ -864,11 +860,12 @@ class ExoPlayerService extends ChangeNotifier {
         debugPrint('⏸️  Calling pause()...');
         await pause();
       } else {
-        // If we have a song but source isn't set (e.g. app restart), load it first
-        if (!_isSourceSet && _currentSong != null) {
-          debugPrint('📥 Source not set, loading song: ${_currentSong!.title}');
+        // If player is idle (no source loaded) but we have a song, load it first
+        if (_playbackState == 'idle' && _currentSong != null) {
+          debugPrint('📥 Player idle, loading song: ${_currentSong!.title}');
           await playHiResSong(_currentSong!);
         } else {
+          // Player has source (Ready/Buffering/Ended), just play
           debugPrint('▶️  Calling play()...');
           await play();
         }

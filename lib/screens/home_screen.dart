@@ -26,11 +26,19 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final GlobalKey<ExpandablePlayerState> _playerKey = GlobalKey<ExpandablePlayerState>();
+  final GlobalKey<NavigatorState> _collectionNavKey = GlobalKey<NavigatorState>();
   
-  final List<Widget> _screens = [
+  late final List<Widget> _screens = [
     const _HomeContent(),
     const SearchScreen(),
-    const CollectionScreen(),
+    Navigator(
+      key: _collectionNavKey,
+      onGenerateRoute: (settings) {
+        return MaterialPageRoute(
+          builder: (context) => const CollectionScreen(),
+        );
+      },
+    ),
     const SettingsScreen(),
   ];
 
@@ -38,13 +46,25 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) {
+      onPopInvoked: (didPop) async {
         if (didPop) return;
 
-        // Check player state
+        // 1. Check player state (Expanded -> Collapse)
         final playerState = _playerKey.currentState;
         if (playerState != null && playerState.isExpanded) {
           playerState.collapse();
+          return;
+        }
+
+        // 2. Check Nested Navigator (Collection Tab)
+        if (_currentIndex == 2 && _collectionNavKey.currentState != null && _collectionNavKey.currentState!.canPop()) {
+          _collectionNavKey.currentState!.pop();
+          return;
+        }
+
+        // 3. If on other tabs, go back to Home first (optional standard behavior)
+        if (_currentIndex != 0) {
+          setState(() => _currentIndex = 0);
           return;
         }
 

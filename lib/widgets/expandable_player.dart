@@ -6,6 +6,7 @@ import '../services/exoplayer_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hires_badge.dart';
 import '../widgets/queue_sheet.dart';
+import '../services/liked_songs_service.dart';
 import '../models/loop_mode.dart';
 
 class ExpandablePlayer extends StatefulWidget {
@@ -397,18 +398,46 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                         ),
                         const SizedBox(height: 12),
                       ],
-                      Text(
-                        song.title,
-                        style: AppTheme.heading1.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        song.artist,
-                        style: AppTheme.caption.copyWith(fontSize: 16, color: AppTheme.textSecondary),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  song.title,
+                                  style: AppTheme.heading1.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  song.artist,
+                                  style: AppTheme.caption.copyWith(fontSize: 16, color: AppTheme.textSecondary),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          ListenableBuilder(
+                            listenable: LikedSongsService(),
+                            builder: (context, _) {
+                              final isLiked = LikedSongsService().isLiked(song.id);
+                              return IconButton(
+                                icon: Icon(
+                                  isLiked ? Icons.favorite : Icons.favorite_border,
+                                  color: isLiked ? AppTheme.primary : AppTheme.textSecondary,
+                                  size: 28,
+                                ),
+                                onPressed: () {
+                                  LikedSongsService().toggleLike(song);
+                                },
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),
