@@ -225,19 +225,14 @@ class _PlayerScreenState extends State<PlayerScreen> with TickerProviderStateMix
           height: albumSize,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primary.withOpacity(0.25),
-                blurRadius: 30,
-                offset: const Offset(0, 15),
-              ),
-            ],
+            // No shadow for performance
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: song.albumCover != null
                 ? CachedNetworkImage(
                     imageUrl: song.albumCover!,
+                    memCacheWidth: 900, // 300 * 3 (High quality but cached)
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
                       color: AppTheme.divider,

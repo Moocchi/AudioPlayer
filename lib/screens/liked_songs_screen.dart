@@ -39,15 +39,15 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
         builder: (context, _) {
           final service = LikedSongsService();
           final songs = service.likedSongs;
-          final totalDurationSeconds = songs.fold<int>(0, (sum, item) => sum + item.duration);
+          final totalDurationSeconds = songs.fold<int>(
+            0,
+            (sum, item) => sum + item.duration,
+          );
           final coverPath = service.playlistCoverPath;
-          
+
           // Use persisted color or default
           final dominantColor = service.dominantColor ?? AppTheme.primary;
-          final gradientColors = [
-            dominantColor,
-            AppTheme.background,
-          ];
+          final gradientColors = [dominantColor, AppTheme.background];
 
           return CustomScrollView(
             slivers: [
@@ -55,7 +55,8 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                 expandedHeight: 250, // Reduced from 350 to reduce gap
                 pinned: true,
                 backgroundColor: Colors.white, // Pure white as requested
-                surfaceTintColor: Colors.transparent, // Disable M3 color tint overlay
+                surfaceTintColor:
+                    Colors.transparent, // Disable M3 color tint overlay
                 actions: [
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert),
@@ -82,7 +83,8 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final double top = constraints.biggest.height;
                     final double expandedHeight = 280.0;
-                    final double collapseRange = expandedHeight - kToolbarHeight;
+                    final double collapseRange =
+                        expandedHeight - kToolbarHeight;
                     final double t = (top - kToolbarHeight) / collapseRange;
                     final double opacity = t.clamp(0.0, 1.0);
 
@@ -100,11 +102,14 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                           ),
                           child: Padding(
                             padding: EdgeInsets.only(
-                              top: MediaQuery.of(context).padding.top + kToolbarHeight,
+                              top:
+                                  MediaQuery.of(context).padding.top +
+                                  kToolbarHeight,
                               left: 16, // Match list tile padding
                             ),
                             child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start, // Top align text with image
+                              crossAxisAlignment: CrossAxisAlignment
+                                  .start, // Top align text with image
                               children: [
                                 // Playlist Cover
                                 Container(
@@ -113,39 +118,51 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                                   decoration: BoxDecoration(
                                     color: AppTheme.surface,
                                     borderRadius: BorderRadius.circular(8),
-                                    boxShadow: kElevationToShadow[4],
-                                    image: coverPath != null 
+                                    // No shadow
+                                    image: coverPath != null
                                         ? DecorationImage(
                                             image: FileImage(File(coverPath)),
                                             fit: BoxFit.cover,
-                                          ) 
+                                          )
                                         : null,
                                   ),
-                                  child: coverPath == null 
+                                  child: coverPath == null
                                       ? Container(
                                           decoration: const BoxDecoration(
                                             gradient: LinearGradient(
-                                              colors: [Colors.white, Colors.purpleAccent],
+                                              colors: [
+                                                Colors.white,
+                                                Colors.purpleAccent,
+                                              ],
                                               begin: Alignment.topLeft,
                                               end: Alignment.bottomRight,
                                             ),
-                                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                                            borderRadius: BorderRadius.all(
+                                              Radius.circular(8),
+                                            ),
                                           ),
                                           child: const Center(
-                                            child: Icon(Icons.favorite, color: Colors.white, size: 64),
+                                            child: Icon(
+                                              Icons.favorite,
+                                              color: Colors.white,
+                                              size: 64,
+                                            ),
                                           ),
                                         )
                                       : null,
                                 ),
-                                
+
                                 const SizedBox(width: 16),
-                                
+
                                 // Info (Right Side)
                                 Expanded(
                                   child: Column(
-                                    mainAxisSize: MainAxisSize.min, // Wrap content height
-                                    crossAxisAlignment: CrossAxisAlignment.start, // Align text to left
-                                    mainAxisAlignment: MainAxisAlignment.start, // Align to top
+                                    mainAxisSize:
+                                        MainAxisSize.min, // Wrap content height
+                                    crossAxisAlignment: CrossAxisAlignment
+                                        .start, // Align text to left
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.start, // Align to top
                                     children: [
                                       _buildOutlinedText(
                                         'Liked Songs',
@@ -161,7 +178,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                                       _buildOutlinedText(
                                         '${songs.length} songs • ${_formatTotalDuration(Duration(seconds: totalDurationSeconds))}',
                                         const TextStyle(
-                                          color: Colors.white, 
+                                          color: Colors.white,
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,
                                         ),
@@ -172,7 +189,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                               ],
                             ),
                           ),
-                      ),
+                        ),
                       ),
                     );
                   },
@@ -182,75 +199,83 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                   onPressed: () => Navigator.pop(context),
                 ),
               ),
-              
+
               // Action Buttons
               SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                         // Play Button
-                         GestureDetector(
-                           onTap: () {
-                             if (songs.isNotEmpty) {
-                                if (_isShuffleOn) {
-                                  final shuffled = List<Song>.from(songs)..shuffle();
-                                  ExoPlayerService().playQueue(shuffled, 0);
-                                } else {
-                                  ExoPlayerService().playQueue(songs, 0);
-                                }
-                             }
-                           },
-                           child: Container(
-                             width: 56,
-                             height: 56,
-                             decoration: const BoxDecoration(
-                              color: AppTheme.primary,
-                              shape: BoxShape.circle,
-                              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))],
-                             ),
-                             child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36),
-                           ),
-                         ),
-                         const SizedBox(width: 16),
-                         // Shuffle Toggle
-                         IconButton(
-                           onPressed: () {
-                             setState(() {
-                               _isShuffleOn = !_isShuffleOn;
-                             });
-                           },
-                           icon: Icon(
-                             Icons.shuffle_rounded,
-                             color: _isShuffleOn ? AppTheme.primary : Colors.grey,
-                             size: 28,
-                           ),
-                         ),
-                      ],
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
                   ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      // Play Button
+                      GestureDetector(
+                        onTap: () {
+                          if (songs.isNotEmpty) {
+                            if (_isShuffleOn) {
+                              final shuffled = List<Song>.from(songs)
+                                ..shuffle();
+                              ExoPlayerService().playQueue(shuffled, 0);
+                            } else {
+                              ExoPlayerService().playQueue(songs, 0);
+                            }
+                          }
+                        },
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.primary,
+                            shape: BoxShape.circle,
+                            // No shadow
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Shuffle Toggle
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _isShuffleOn = !_isShuffleOn;
+                          });
+                        },
+                        icon: Icon(
+                          Icons.shuffle_rounded,
+                          color: _isShuffleOn ? AppTheme.primary : Colors.grey,
+                          size: 28,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
 
               // Song List
               if (songs.isEmpty)
                 const SliverFillRemaining(
                   child: Center(
-                    child: Text('No liked songs yet', style: TextStyle(color: Colors.grey)),
+                    child: Text(
+                      'No liked songs yet',
+                      style: TextStyle(color: Colors.grey),
+                    ),
                   ),
                 )
               else
                 SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final song = songs[index];
-                      return _buildSongItem(context, song, index, songs);
-                    },
-                    childCount: songs.length,
-                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final song = songs[index];
+                    return _buildSongItem(context, song, index, songs);
+                  }, childCount: songs.length),
                 ),
-                
-              const SliverPadding(padding: EdgeInsets.only(bottom: 120)), 
+
+              const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
             ],
           );
         },
@@ -265,7 +290,12 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     return '${d.inMinutes} min';
   }
 
-  Widget _buildSongItem(BuildContext context, Song song, int index, List<Song> songs) {
+  Widget _buildSongItem(
+    BuildContext context,
+    Song song,
+    int index,
+    List<Song> songs,
+  ) {
     return InkWell(
       onTap: () {
         ExoPlayerService().playQueue(songs, index);
@@ -275,22 +305,46 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
         child: Row(
           children: [
             // Album Art
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                color: Colors.grey[800],
+              ),
               child: song.albumCover != null
                   ? CachedNetworkImage(
                       imageUrl: song.albumCover!,
+                      memCacheWidth: 144, // Restored (48 * 3)
+                      maxWidthDiskCache: 144,
+                      fadeInDuration: Duration.zero,
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(color: Colors.grey[800]),
-                      errorWidget: (_, __, ___) => Container(color: Colors.grey[800], child: const Icon(Icons.music_note, color: Colors.white54)),
+                      imageBuilder: (context, imageProvider) => Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          image: DecorationImage(
+                            image: imageProvider,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      placeholder: (_, __) =>
+                          Container(color: AppTheme.divider),
+                      errorWidget: (_, __, ___) => const SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Icon(Icons.music_note, color: Colors.white54),
+                      ),
                     )
-                  : Container(width: 48, height: 48, color: Colors.grey[800], child: const Icon(Icons.music_note, color: Colors.white54)),
+                  : const SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Icon(Icons.music_note, color: Colors.white54),
+                    ),
             ),
-            
+
             const SizedBox(width: 12),
-            
+
             // Song Info
             Expanded(
               child: Column(
@@ -302,7 +356,11 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                     song.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w600, fontSize: 16),
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   // Subtitle (Badges + Artist + Duration)
@@ -310,11 +368,11 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                     children: [
                       // Badges
                       if (song.isHiRes) ...[
-                         const AnimatedHiResBadge(),
-                         const SizedBox(width: 6),
+                        const AnimatedHiResBadge(),
+                        const SizedBox(width: 6),
                       ] else if (song.isLossless) ...[
-                         const LosslessBadge(),
-                         const SizedBox(width: 6),
+                        const LosslessBadge(),
+                        const SizedBox(width: 6),
                       ],
                       // Artist
                       Expanded(
@@ -322,20 +380,26 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                           song.artist,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.black54, fontSize: 13),
+                          style: const TextStyle(
+                            color: Colors.black54,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                       // Duration (Right next to More button effectively)
                       Text(
                         song.durationFormatted,
-                        style: const TextStyle(color: Colors.black54, fontSize: 13),
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
                 ],
               ),
             ),
-            
+
             // More Button (close to duration)
             IconButton(
               icon: const Icon(Icons.more_vert, color: Colors.black54),
@@ -362,17 +426,13 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
           style: style.copyWith(
             foreground: Paint()
               ..style = PaintingStyle.stroke
-              ..strokeWidth = 0.5 // Requested 0.5 width
+              ..strokeWidth =
+                  0.5 // Requested 0.5 width
               ..color = Colors.black,
           ),
         ),
         // Fill
-        Text(
-          text,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: style,
-        ),
+        Text(text, maxLines: 2, overflow: TextOverflow.ellipsis, style: style),
       ],
     );
   }

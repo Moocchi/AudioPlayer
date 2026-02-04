@@ -5,10 +5,7 @@ import '../models/song.dart';
 import '../services/exoplayer_service.dart';
 import '../services/play_history_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/mini_player.dart';
 import '../widgets/hires_badge.dart';
-import '../widgets/marquee_text.dart';
-import '../widgets/marquee_text.dart';
 import '../widgets/expandable_player.dart'; // New Import
 import '../widgets/mini_equalizer.dart'; // New Import
 import 'player_screen.dart';
@@ -25,9 +22,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
-  final GlobalKey<ExpandablePlayerState> _playerKey = GlobalKey<ExpandablePlayerState>();
-  final GlobalKey<NavigatorState> _collectionNavKey = GlobalKey<NavigatorState>();
-  
+  final GlobalKey<ExpandablePlayerState> _playerKey =
+      GlobalKey<ExpandablePlayerState>();
+  final GlobalKey<NavigatorState> _collectionNavKey =
+      GlobalKey<NavigatorState>();
+
   late final List<Widget> _screens = [
     const _HomeContent(),
     const SearchScreen(),
@@ -57,7 +56,9 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         // 2. Check Nested Navigator (Collection Tab)
-        if (_currentIndex == 2 && _collectionNavKey.currentState != null && _collectionNavKey.currentState!.canPop()) {
+        if (_currentIndex == 2 &&
+            _collectionNavKey.currentState != null &&
+            _collectionNavKey.currentState!.canPop()) {
           _collectionNavKey.currentState!.pop();
           return;
         }
@@ -73,13 +74,33 @@ class _HomeScreenState extends State<HomeScreen> {
       },
       child: Stack(
         children: [
-          Scaffold(
-            backgroundColor: AppTheme.background,
-            body: IndexedStack(
-              index: _currentIndex,
-              children: _screens,
+          RepaintBoundary(
+            child: Scaffold(
+              backgroundColor: AppTheme.background,
+              body: IndexedStack(index: _currentIndex, children: _screens),
+              bottomNavigationBar: ValueListenableBuilder<double>(
+                valueListenable:
+                    _playerKey.currentState?.animationNotifier ??
+                    ValueNotifier(0.0),
+                builder: (context, playerValue, child) {
+                  // Fade out (1 when closed, 0 when open)
+                  final opacity = (1 - playerValue).clamp(0.0, 1.0);
+                  // Slide down
+                  final offset = playerValue * 120;
+
+                  return Opacity(
+                    opacity: opacity,
+                    child: Transform.translate(
+                      offset: Offset(0, offset),
+                      child: IgnorePointer(
+                        ignoring: playerValue > 0.3,
+                        child: _buildBottomNav(),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
-            bottomNavigationBar: _buildBottomNav(),
           ),
           ExpandablePlayer(key: _playerKey),
         ],
@@ -91,13 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        border: Border(top: BorderSide(color: AppTheme.divider, width: 0.5)),
       ),
       child: SafeArea(
         child: Padding(
@@ -107,8 +122,18 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildNavItem(0, Icons.home_outlined, Icons.home, 'Home'),
               _buildNavItem(1, Icons.search_outlined, Icons.search, 'Search'),
-              _buildNavItem(2, Icons.library_music_outlined, Icons.library_music, 'Collection'),
-              _buildNavItem(3, Icons.settings_outlined, Icons.settings, 'Settings'),
+              _buildNavItem(
+                2,
+                Icons.library_music_outlined,
+                Icons.library_music,
+                'Collection',
+              ),
+              _buildNavItem(
+                3,
+                Icons.settings_outlined,
+                Icons.settings,
+                'Settings',
+              ),
             ],
           ),
         ),
@@ -116,7 +141,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, IconData activeIcon, String label) {
+  Widget _buildNavItem(
+    int index,
+    IconData icon,
+    IconData activeIcon,
+    String label,
+  ) {
     final isActive = _currentIndex == index;
     return InkWell(
       onTap: () => setState(() => _currentIndex = index),
@@ -158,13 +188,26 @@ class _HomeContent extends StatefulWidget {
 class _HomeContentState extends State<_HomeContent> {
   final ExoPlayerService _audio = ExoPlayerService();
   final PlayHistoryService _history = PlayHistoryService();
-  final PageController _albumPageController = PageController();
+  late final PageController _albumPageController;
+  late final PageController _quickPicksPageController;
   int _currentAlbumPage = 0;
+  int _currentQuickPicksPage = 0;
 
   @override
   void initState() {
     super.initState();
-    _initHistory();
+    _albumPageController = PageController();
+    _quickPicksPageController = PageController();
+
+    // Pre-cache images after first frame to improve scrolling performance
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _precacheImages();
+    });
+  }
+
+  void _precacheImages() {
+    // DISABLED: Precaching blocks UI thread during startup
+    // Images will load on-demand with aggressive caching instead
   }
 
   Future<void> _initHistory() async {
@@ -187,7 +230,7 @@ class _HomeContentState extends State<_HomeContent> {
           children: [
             // Header - only logo and app name
             _buildHeader(),
-            
+
             // Content
             Expanded(
               child: ListenableBuilder(
@@ -200,15 +243,16 @@ class _HomeContentState extends State<_HomeContent> {
                         // Quick Picks - frequently played songs
                         if (_history.frequentSongs.isNotEmpty)
                           _buildQuickPicks(),
-                        
+
                         // Quick Shortcuts - random songs grid
                         if (_history.shuffledSongs.isNotEmpty)
                           _buildQuickShortcuts(),
-                        
+
                         // Empty state if no history
-                        if (_history.frequentSongs.isEmpty && _history.shuffledSongs.isEmpty)
+                        if (_history.frequentSongs.isEmpty &&
+                            _history.shuffledSongs.isEmpty)
                           _buildEmptyState(),
-                        
+
                         const SizedBox(height: 100), // Space for mini player
                       ],
                     ),
@@ -238,10 +282,7 @@ class _HomeContentState extends State<_HomeContent> {
           ),
           const SizedBox(width: 12),
           // App name
-          Text(
-            'Iqbal Hires',
-            style: AppTheme.heading2.copyWith(fontSize: 22),
-          ),
+          Text('Iqbal Hires', style: AppTheme.heading2.copyWith(fontSize: 22)),
         ],
       ),
     );
@@ -249,11 +290,11 @@ class _HomeContentState extends State<_HomeContent> {
 
   Widget _buildQuickPicks() {
     final songs = _history.frequentSongs;
-    
+
     // Calculate columns needed (4 rows per column, max 20 songs)
     final itemsPerColumn = 4;
-    final totalColumns = (songs.length / itemsPerColumn).ceil();
-    
+    final totalPages = (songs.length / itemsPerColumn).ceil();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -265,13 +306,18 @@ class _HomeContentState extends State<_HomeContent> {
           ),
         ),
         SizedBox(
-          height: 296, // Increased height for larger items (4 items * 74 height)
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(left: 16),
-            itemCount: totalColumns,
-            itemBuilder: (context, columnIndex) {
-              return _buildQuickPickColumn(songs, columnIndex, itemsPerColumn);
+          height: 296,
+          child: PageView.builder(
+            controller: _quickPicksPageController,
+            itemCount: totalPages,
+            onPageChanged: (page) {
+              setState(() => _currentQuickPicksPage = page);
+            },
+            itemBuilder: (context, pageIndex) {
+              return Padding(
+                padding: const EdgeInsets.only(left: 16, right: 16),
+                child: _buildQuickPickColumn(songs, pageIndex, itemsPerColumn),
+              );
             },
           ),
         ),
@@ -279,18 +325,16 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 
-  Widget _buildQuickPickColumn(List<Song> songs, int columnIndex, int itemsPerColumn) {
+  Widget _buildQuickPickColumn(
+    List<Song> songs,
+    int columnIndex,
+    int itemsPerColumn,
+  ) {
     final startIndex = columnIndex * itemsPerColumn;
     final endIndex = (startIndex + itemsPerColumn).clamp(0, songs.length);
     final columnSongs = songs.sublist(startIndex, endIndex);
-    
-    // Protect against negative width during layout transitions
-    final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = (screenWidth - 48).clamp(0.0, double.infinity);
 
     return Container(
-      width: cardWidth,
-      margin: const EdgeInsets.only(right: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: columnSongs.asMap().entries.map((entry) {
@@ -304,136 +348,156 @@ class _HomeContentState extends State<_HomeContent> {
 
   Widget _buildQuickPickItem(Song song, int index, List<Song> songs) {
     final isPlaying = _audio.currentSong?.id == song.id;
-    
+
     return InkWell(
       onTap: () => _playSong(song, index, songs),
       borderRadius: BorderRadius.circular(8),
-      child: Container(
-        height: 72, // Increased item height
-        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8), // More vertical padding
-        child: Row(
-          children: [
-            // Album art
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6), // Slightly more rounded
-                  child: song.albumCover != null
-                      ? CachedNetworkImage(
-                          imageUrl: song.albumCover!,
-                          width: 56, // Increased Image size
-                          height: 56,
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => Container(
-                            width: 56,
-                            height: 56,
-                            color: AppTheme.divider,
-                            child: const Icon(Icons.music_note, size: 24),
-                          ),
-                          errorWidget: (context, url, error) => Container(
-                            width: 56,
-                            height: 56,
-                            color: AppTheme.divider,
-                            child: const Icon(Icons.music_note, size: 24),
-                          ),
-                        )
-                      : Container(
-                          width: 56,
-                          height: 56, // Increased size
-
-                          color: AppTheme.divider,
-                          child: const Icon(Icons.music_note, size: 20),
-                        ),
-                ),
-                // Playing indicator
-                // Playing indicator (Equalizer)
-                // Playing indicator (Equalizer)
-                if (isPlaying)
-                  const Positioned(
-                    right: 4,
-                    bottom: 4,
-                    child: MiniEqualizer(
-                      size: 14,
-                      color: Colors.white,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 10),
-            // Song info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
+      child: RepaintBoundary(
+        // Optimization for scroll performance
+        child: Container(
+          height: 72,
+          padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+          child: Row(
+            children: [
+              // Album art with Equalizer
+              Stack(
                 children: [
-                  // Title with badge
-                  Row(
-                    children: [
-                      Expanded(
-                        child: MarqueeText(
-                          text: song.title,
-                          style: TextStyle(
-                            color: isPlaying ? AppTheme.primary : AppTheme.textPrimary,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 14,
+                  Container(
+                    height: 56,
+                    width: 56,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: AppTheme.divider,
+                    ),
+                    child: song.albumCover != null
+                        ? CachedNetworkImage(
+                            imageUrl: song.albumCover!,
+                            memCacheWidth: 168, // Restored (56 * 3)
+                            maxWidthDiskCache: 168,
+                            fadeInDuration: Duration.zero,
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            imageBuilder: (context, imageProvider) => Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                image: DecorationImage(
+                                  image: imageProvider,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            placeholder: (context, url) => Container(
+                              color: AppTheme.divider,
+                            ), // Simple placeholder
+                            errorWidget: (context, url, error) => const Center(
+                              child: Icon(
+                                Icons.music_note,
+                                size: 24,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          )
+                        : const Center(
+                            child: Icon(
+                              Icons.music_note,
+                              size: 24,
+                              color: AppTheme.textSecondary,
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
                   ),
-                  const SizedBox(height: 2),
-                  // Artist and duration
-                  Row(
-                    children: [
-                      if (song.isHiRes) ...[
-                        const AnimatedHiResBadge(),
-                        const SizedBox(width: 6),
-                      ] else if (song.isLossless) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1DB954),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'Lossless',
+                  // Playing indicator (Equalizer)
+                  if (isPlaying)
+                    const Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: MiniEqualizer(size: 14, color: Colors.white),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 10),
+              // Song info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Title with badge
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
+                              color: isPlaying
+                                  ? AppTheme.primary
+                                  : AppTheme.textPrimary,
+                              fontWeight: FontWeight.w600, // Slightly bolder
+                              fontSize: 14,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
                       ],
-                      Expanded(
-                        child: Text(
-                          song.artist,
-                          style: AppTheme.caption.copyWith(fontSize: 12),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    // Artist and duration
+                    Row(
+                      children: [
+                        if (song.isHiRes) ...[
+                          const AnimatedHiResBadge(),
+                          const SizedBox(width: 6),
+                        ] else if (song.isLossless) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1DB954),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'Lossless',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Expanded(
+                          child: Text(
+                            song.artist,
+                            style: AppTheme.caption.copyWith(fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                      Text(
-                        ' ${song.durationFormatted}',
-                        style: AppTheme.caption.copyWith(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
+                        Text(
+                          ' ${song.durationFormatted}',
+                          style: AppTheme.caption.copyWith(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            // More button
-            IconButton(
-              icon: const Icon(Icons.more_vert, size: 20),
-              color: AppTheme.textSecondary,
-              onPressed: () {
-                // TODO: Show song options
-              },
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            ),
-          ],
+              // More button
+              IconButton(
+                icon: const Icon(Icons.more_vert, size: 20),
+                color: AppTheme.textSecondary,
+                onPressed: () {
+                  // TODO: Show song options
+                },
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -442,7 +506,7 @@ class _HomeContentState extends State<_HomeContent> {
   Widget _buildQuickShortcuts() {
     final songs = _history.shuffledSongs;
     final totalPages = (songs.length / 9).ceil().clamp(1, 2);
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -467,7 +531,7 @@ class _HomeContentState extends State<_HomeContent> {
               final startIndex = pageIndex * 9;
               final endIndex = (startIndex + 9).clamp(0, songs.length);
               final pageSongs = songs.sublist(startIndex, endIndex);
-              
+
               return _buildShortcutGrid(pageSongs);
             },
           ),
@@ -519,69 +583,83 @@ class _HomeContentState extends State<_HomeContent> {
 
   Widget _buildShortcutItem(Song song, int index, List<Song> songs) {
     final isPlaying = _audio.currentSong?.id == song.id;
-    
+
     return GestureDetector(
       onTap: () => _playSong(song, index, songs),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Album cover
-            CachedNetworkImage(
-              imageUrl: song.albumCover ?? '',
-              fit: BoxFit.cover,
-              placeholder: (context, url) => Container(
-                color: AppTheme.divider,
-                child: const Icon(Icons.music_note, size: 24),
-              ),
-              errorWidget: (context, url, error) => Container(
-                color: AppTheme.divider,
-                child: const Icon(Icons.music_note, size: 24),
-              ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Album cover
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              color: AppTheme.divider,
             ),
-
-            // Gradient overlay at bottom
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                height: 30,
+            child: CachedNetworkImage(
+              imageUrl: song.albumCover ?? '',
+              memCacheWidth: 450, // Restored (Grid ~150 * 3)
+              maxWidthDiskCache: 450,
+              fadeInDuration: Duration.zero,
+              width: double.infinity,
+              height: double.infinity,
+              fit: BoxFit.cover,
+              imageBuilder: (context, imageProvider) => Container(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.85),
-                    ],
+                  borderRadius: BorderRadius.circular(4),
+                  image: DecorationImage(
+                    image: imageProvider,
+                    fit: BoxFit.cover,
                   ),
                 ),
               ),
-            ),
-            // Song title inside
-            Positioned(
-              left: 4,
-              right: 4,
-              bottom: 4,
-              child: MarqueeText(
-                text: song.title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black,
-                      blurRadius: 4,
-                    ),
-                  ],
+              placeholder: (context, url) => Container(color: AppTheme.divider),
+              errorWidget: (context, url, error) => const Center(
+                child: Icon(
+                  Icons.music_note,
+                  size: 24,
+                  color: AppTheme.textSecondary,
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+
+          // Gradient overlay at bottom
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              height: 30,
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(4),
+                ), // Match corner
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
+                ),
+              ),
+            ),
+          ),
+          // Song title inside
+          Positioned(
+            left: 4,
+            right: 4,
+            bottom: 4,
+            child: Text(
+              song.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+                shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -606,10 +684,7 @@ class _HomeContentState extends State<_HomeContent> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Welcome to Iqbal Hires',
-              style: AppTheme.heading2,
-            ),
+            const Text('Welcome to Iqbal Hires', style: AppTheme.heading2),
             const SizedBox(height: 8),
             Text(
               'Search and play some songs to\nsee your quick picks here!',
@@ -620,7 +695,8 @@ class _HomeContentState extends State<_HomeContent> {
             ElevatedButton.icon(
               onPressed: () {
                 // Navigate to search tab
-                final homeState = context.findAncestorStateOfType<_HomeScreenState>();
+                final homeState = context
+                    .findAncestorStateOfType<_HomeScreenState>();
                 homeState?.setState(() => homeState._currentIndex = 1);
               },
               icon: const Icon(Icons.search),
@@ -628,7 +704,10 @@ class _HomeContentState extends State<_HomeContent> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(24),
                 ),
@@ -643,6 +722,7 @@ class _HomeContentState extends State<_HomeContent> {
   @override
   void dispose() {
     _albumPageController.dispose();
+    _quickPicksPageController.dispose();
     super.dispose();
   }
 }

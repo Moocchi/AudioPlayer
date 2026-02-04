@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import '../widgets/mini_player.dart';
 import '../services/liked_songs_service.dart';
 import 'liked_songs_screen.dart';
 

@@ -5,7 +5,6 @@ import '../services/api_service.dart';
 import '../services/exoplayer_service.dart';
 import '../services/play_history_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/mini_player.dart';
 import '../widgets/hires_badge.dart';
 import 'player_screen.dart';
 
@@ -33,7 +32,7 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     final results = await ApiService.searchSongs(query);
-    
+
     setState(() {
       _songs = results;
       _isLoading = false;
@@ -44,20 +43,20 @@ class _SearchScreenState extends State<SearchScreen> {
     final song = _songs[index];
     _audio.playQueue(_songs, index);
     _history.recordPlay(song);
-    
+
     Navigator.push(
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, _) => const PlayerScreen(),
         transitionsBuilder: (context, animation, _, child) {
           return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            )),
+            position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
             child: child,
           );
         },
@@ -75,7 +74,7 @@ class _SearchScreenState extends State<SearchScreen> {
           children: [
             // Search header
             _buildSearchHeader(),
-            
+
             // Content
             Expanded(
               child: _isLoading
@@ -83,12 +82,11 @@ class _SearchScreenState extends State<SearchScreen> {
                       child: CircularProgressIndicator(color: AppTheme.primary),
                     )
                   : _hasSearched
-                      ? _buildSearchResults()
-                      : _buildSearchPrompt(),
+                  ? _buildSearchResults()
+                  : _buildSearchPrompt(),
             ),
-            
-            // Mini player
 
+            // Mini player
           ],
         ),
       ),
@@ -101,10 +99,7 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Search',
-            style: AppTheme.heading1.copyWith(fontSize: 28),
-          ),
+          Text('Search', style: AppTheme.heading1.copyWith(fontSize: 28)),
           const SizedBox(height: 16),
           // Search bar
           Container(
@@ -118,10 +113,16 @@ class _SearchScreenState extends State<SearchScreen> {
               decoration: InputDecoration(
                 hintText: 'Songs, artists, albums...',
                 hintStyle: AppTheme.caption,
-                prefixIcon: const Icon(Icons.search, color: AppTheme.textSecondary),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: AppTheme.textSecondary,
+                ),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, color: AppTheme.textSecondary),
+                        icon: const Icon(
+                          Icons.clear,
+                          color: AppTheme.textSecondary,
+                        ),
                         onPressed: () {
                           _searchController.clear();
                           setState(() {
@@ -132,7 +133,10 @@ class _SearchScreenState extends State<SearchScreen> {
                       )
                     : null,
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
               ),
               onSubmitted: _search,
               onChanged: (_) => setState(() {}),
@@ -175,7 +179,11 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search_off, size: 64, color: AppTheme.textSecondary.withOpacity(0.5)),
+            Icon(
+              Icons.search_off,
+              size: 64,
+              color: AppTheme.textSecondary.withOpacity(0.5),
+            ),
             const SizedBox(height: 16),
             const Text('No results found', style: AppTheme.caption),
           ],
@@ -209,32 +217,49 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Row(
           children: [
             // Album art
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: AppTheme.divider,
+              ),
               child: song.albumCover != null
                   ? CachedNetworkImage(
                       imageUrl: song.albumCover!,
+                      memCacheWidth: 168, // Restored (56 * 3)
+                      maxWidthDiskCache: 168,
+                      fadeInDuration: Duration.zero,
                       width: 56,
                       height: 56,
                       fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        width: 56,
-                        height: 56,
-                        color: AppTheme.divider,
-                        child: const Icon(Icons.music_note, size: 24),
+                      imageBuilder: (context, imageProvider) => Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          image: DecorationImage(
+                            image: imageProvider,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       ),
-                      errorWidget: (context, url, error) => Container(
+                      placeholder: (context, url) =>
+                          Container(color: AppTheme.divider),
+                      errorWidget: (context, url, error) => const SizedBox(
                         width: 56,
                         height: 56,
-                        color: AppTheme.divider,
-                        child: const Icon(Icons.music_note),
+                        child: Icon(
+                          Icons.music_note,
+                          size: 24,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     )
-                  : Container(
+                  : const SizedBox(
                       width: 56,
                       height: 56,
-                      color: AppTheme.divider,
-                      child: const Icon(Icons.music_note),
+                      child: Icon(
+                        Icons.music_note,
+                        size: 24,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
             ),
             const SizedBox(width: 12),
@@ -250,7 +275,10 @@ class _SearchScreenState extends State<SearchScreen> {
                         const SizedBox(width: 6),
                       ] else if (song.isLossless) ...[
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFF1DB954),
                             borderRadius: BorderRadius.circular(4),
@@ -270,7 +298,9 @@ class _SearchScreenState extends State<SearchScreen> {
                         child: Text(
                           song.title,
                           style: TextStyle(
-                            color: isPlaying ? AppTheme.primary : AppTheme.textPrimary,
+                            color: isPlaying
+                                ? AppTheme.primary
+                                : AppTheme.textPrimary,
                             fontWeight: FontWeight.w500,
                             fontSize: 15,
                           ),
@@ -291,10 +321,7 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
             // Duration
-            Text(
-              song.durationFormatted,
-              style: AppTheme.caption,
-            ),
+            Text(song.durationFormatted, style: AppTheme.caption),
           ],
         ),
       ),

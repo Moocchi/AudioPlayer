@@ -16,23 +16,30 @@ class ExpandablePlayer extends StatefulWidget {
   State<ExpandablePlayer> createState() => ExpandablePlayerState();
 }
 
-class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderStateMixin {
+class ExpandablePlayerState extends State<ExpandablePlayer>
+    with TickerProviderStateMixin {
   late AnimationController _controller;
-  
+  late CurvedAnimation _curvedAnimation;
+  final ValueNotifier<double> _animationValue = ValueNotifier(0.0);
+
   bool get isExpanded => _controller.value > 0.5;
-  
+
+  // Public getter for animation value (for bottom nav animation)
+  Animation<double> get animation => _curvedAnimation;
+  ValueNotifier<double> get animationNotifier => _animationValue;
+
   void collapse() {
     _controller.reverse();
   }
-  
+
   // Dimensions
   static const double _miniPlayerHeight = 66.0;
   static const double _albumArtSizeMini = 48.0;
   static const double _albumArtSizeFull = 290.0;
-  
+
   double _dragStartY = 0.0;
   double _dragStartValue = 0.0;
-  
+
   // Player Slider State
   bool _isDraggingSlider = false;
   double _dragSliderValue = 0.0;
@@ -43,13 +50,23 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
-      value: 0.0, // Start minimized
+      duration: const Duration(milliseconds: 400),
     );
+    _curvedAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOutCubic, // Smooth ease in/out
+    );
+
+    // Update notifier on animation changes
+    _curvedAnimation.addListener(() {
+      _animationValue.value = _curvedAnimation.value;
+    });
   }
 
   @override
   void dispose() {
+    _animationValue.dispose();
+    _curvedAnimation.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -63,7 +80,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
     final screenHeight = MediaQuery.of(context).size.height;
     final dragDistance = details.globalPosition.dy - _dragStartY;
     final valueDelta = dragDistance / (screenHeight - _miniPlayerHeight);
-    
+
     _controller.value = (_dragStartValue - valueDelta).clamp(0.0, 1.0);
   }
 
@@ -76,10 +93,12 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
   }
 
   void _toggle() {
-    if (_controller.value < 0.5) _controller.forward();
-    else _controller.reverse();
+    if (_controller.value < 0.5)
+      _controller.forward();
+    else
+      _controller.reverse();
   }
-  
+
   String _formatDuration(Duration d) {
     if (d.inMilliseconds < 0) return "0:00";
     final minutes = d.inMinutes;
@@ -90,8 +109,9 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
-    final bottomNavHeight = kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom;
-    
+    final bottomNavHeight =
+        kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom;
+
     return ListenableBuilder(
       listenable: ExoPlayerService(),
       builder: (context, _) {
@@ -99,15 +119,19 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
         final song = audio.currentSong;
 
         return AnimatedBuilder(
-          animation: _controller,
+          animation: _curvedAnimation,
           builder: (context, child) {
-            final value = _controller.value;
+            final value = _curvedAnimation.value;
             // Height interpolation
-            final currentHeight = lerpDouble(_miniPlayerHeight, screenHeight, value)!;
-            
+            final currentHeight = lerpDouble(
+              _miniPlayerHeight,
+              screenHeight,
+              value,
+            )!;
+
             // Bottom position (above nav bar when mini, at 0 when full)
             final bottomPos = lerpDouble(bottomNavHeight + 24, 0, value)!;
-            
+
             // Margins for mini player look
             final horizontalMargin = lerpDouble(12, 0, value)!;
             final borderRadius = lerpDouble(16, 0, value)!;
@@ -119,14 +143,15 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
               height: currentHeight,
               child: GestureDetector(
                 // Only allow tap to open if we have a song
-                onTap: (song != null && _controller.value < 0.5) ? _toggle : null, 
+                onTap: (song != null && _controller.value < 0.5)
+                    ? _toggle
+                    : null,
                 // Only allow drag if we have a song
                 onVerticalDragStart: song != null ? _handleDragStart : null,
                 onVerticalDragUpdate: song != null ? _handleDragUpdate : null,
                 onVerticalDragEnd: song != null ? _handleDragEnd : null,
                 child: Material(
-                  elevation: 10 * value + 2, // Native optimized shadow
-                  shadowColor: Colors.black.withOpacity(0.2),
+                  elevation: 0, // No shadow for performance
                   color: Color.lerp(Colors.white, AppTheme.background, value),
                   borderRadius: BorderRadius.circular(borderRadius),
                   clipBehavior: Clip.hardEdge, // Faster clipping
@@ -134,7 +159,10 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                     children: [
                       // Mini Player Content (Always present, fades out)
                       Opacity(
-                        opacity: (1 - value * 3).clamp(0.0, 1.0), // Fade out quickly
+                        opacity: ((1 - value * 3).clamp(
+                          0.0,
+                          1.0,
+                        )).toDouble(), // Fade out quickly
                         child: IgnorePointer(
                           ignoring: value > 0.5,
                           child: RepaintBoundary(
@@ -154,15 +182,19 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                                 alignment: Alignment.topCenter,
                                 minHeight: screenHeight,
                                 maxHeight: screenHeight,
-                                child: _buildFullPlayerContent(context, audio, song, value),
+                                child: _buildFullPlayerContent(
+                                  context,
+                                  audio,
+                                  song,
+                                  value,
+                                ),
                               ),
                             ),
                           ),
                         ),
 
                       // Animated Album Art (Connecting Mini and Full)
-                      if (song != null)
-                        _buildAnimatedAlbumArt(song, value),
+                      if (song != null) _buildAnimatedAlbumArt(song, value),
                     ],
                   ),
                 ),
@@ -177,13 +209,17 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
   Widget _buildAnimatedAlbumArt(Song song, double value) {
     final screenWidth = MediaQuery.of(context).size.width;
     final fullLeft = (screenWidth - _albumArtSizeFull) / 2;
-    
+
     final safeTop = MediaQuery.of(context).padding.top;
-    final fullTop = safeTop + 60 + 20; 
+    final fullTop = safeTop + 60 + 20;
 
     final currentLeft = lerpDouble(12, fullLeft, value)!;
     final currentTop = lerpDouble(9, fullTop, value)!;
-    final currentSize = lerpDouble(_albumArtSizeMini, _albumArtSizeFull, value)!;
+    final currentSize = lerpDouble(
+      _albumArtSizeMini,
+      _albumArtSizeFull,
+      value,
+    )!;
 
     return Positioned(
       left: currentLeft,
@@ -191,7 +227,8 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
       width: currentSize,
       height: currentSize,
       child: Material(
-        elevation: lerpDouble(0, 8, value)!,
+        elevation: lerpDouble(0, 12, value)!, // Shadow grows as it expands
+        shadowColor: AppTheme.primary.withOpacity(0.3), // Orange theme shadow
         color: AppTheme.background,
         borderRadius: BorderRadius.circular(lerpDouble(10, 20, value)!),
         clipBehavior: Clip.hardEdge,
@@ -199,8 +236,10 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
             ? CachedNetworkImage(
                 imageUrl: song.albumCover!,
                 fit: BoxFit.cover,
-                placeholder: (context, url) => Container(color: AppTheme.divider),
-                errorWidget: (context, url, error) => Container(color: AppTheme.divider),
+                placeholder: (context, url) =>
+                    Container(color: AppTheme.divider),
+                errorWidget: (context, url, error) =>
+                    Container(color: AppTheme.divider),
                 memCacheWidth: 300,
               )
             : Container(color: AppTheme.divider),
@@ -230,24 +269,25 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                   // No icon requested
                 ),
                 const SizedBox(width: 12),
-                
+
                 // "Tidak ada yang diputar" text
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Tidak ada yang diputar', 
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600, 
-                            fontSize: 14,
-                            color: AppTheme.textSecondary,
-                          )
+                      Text(
+                        'Tidak ada yang diputar',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                
+
                 // Play button (inactive)
                 IconButton(
                   icon: const Icon(Icons.play_arrow_rounded),
@@ -264,7 +304,10 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
     return Stack(
       children: [
         Container(
-          padding: const EdgeInsets.only(left: 72, right: 12), // Space for image
+          padding: const EdgeInsets.only(
+            left: 72,
+            right: 12,
+          ), // Space for image
           alignment: Alignment.centerLeft,
           height: _miniPlayerHeight,
           child: Row(
@@ -277,21 +320,43 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                     Row(
                       children: [
                         Expanded(
-                          child: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                          child: Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                    Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: AppTheme.caption.copyWith(fontSize: 12)),
+                    Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTheme.caption.copyWith(fontSize: 12),
+                    ),
                   ],
                 ),
               ),
               if (audio.isLoading)
-                 const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppTheme.primary,
+                  ),
+                )
               else ...[
                 IconButton(
-                  icon: Icon(audio.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                  icon: Icon(
+                    audio.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                  ),
                   color: AppTheme.primary,
                   onPressed: audio.togglePlayPause,
                 ),
@@ -300,7 +365,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                   color: AppTheme.textSecondary,
                   onPressed: audio.playNext,
                 ),
-              ]
+              ],
             ],
           ),
         ),
@@ -313,18 +378,21 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
           child: StreamBuilder<Duration>(
             stream: audio.positionStream,
             builder: (context, snapshot) {
-               final position = snapshot.data ?? Duration.zero;
-               final duration = audio.duration;
-               double progress = 0.0;
-               if (duration.inMilliseconds > 0) {
-                 progress = (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
-               }
-               return LinearProgressIndicator(
-                 value: progress,
-                 backgroundColor: Colors.transparent,
-                 valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primary),
-                 minHeight: 2,
-               );
+              final position = snapshot.data ?? Duration.zero;
+              final duration = audio.duration;
+              double progress = 0.0;
+              if (duration.inMilliseconds > 0) {
+                progress = (position.inMilliseconds / duration.inMilliseconds)
+                    .clamp(0.0, 1.0);
+              }
+              return LinearProgressIndicator(
+                value: progress,
+                backgroundColor: Colors.transparent,
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  AppTheme.primary,
+                ),
+                minHeight: 2,
+              );
             },
           ),
         ),
@@ -332,9 +400,14 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
     );
   }
 
-  Widget _buildFullPlayerContent(BuildContext context, ExoPlayerService audio, Song song, double value) {
+  Widget _buildFullPlayerContent(
+    BuildContext context,
+    ExoPlayerService audio,
+    Song song,
+    double value,
+  ) {
     if (value < 0.1) return const SizedBox.shrink(); // Optimization
-    
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
@@ -348,7 +421,10 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 32,
+                      ),
                       onPressed: _toggle,
                     ),
                     const Expanded(
@@ -371,9 +447,8 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                   ],
                 ),
               ),
-              
+
               SizedBox(height: 20 + _albumArtSizeFull + 32), // Spacer for Image
-              
               // Song Info
               Center(
                 child: SizedBox(
@@ -386,14 +461,21 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                         const SizedBox(height: 12),
                       ] else if (song.isLossless) ...[
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFF1DB954),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
                             'Lossless',
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -407,14 +489,20 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                               children: [
                                 Text(
                                   song.title,
-                                  style: AppTheme.heading1.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
+                                  style: AppTheme.heading1.copyWith(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
                                   song.artist,
-                                  style: AppTheme.caption.copyWith(fontSize: 16, color: AppTheme.textSecondary),
+                                  style: AppTheme.caption.copyWith(
+                                    fontSize: 16,
+                                    color: AppTheme.textSecondary,
+                                  ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -424,11 +512,17 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                           ListenableBuilder(
                             listenable: LikedSongsService(),
                             builder: (context, _) {
-                              final isLiked = LikedSongsService().isLiked(song.id);
+                              final isLiked = LikedSongsService().isLiked(
+                                song.id,
+                              );
                               return IconButton(
                                 icon: Icon(
-                                  isLiked ? Icons.favorite : Icons.favorite_border,
-                                  color: isLiked ? AppTheme.primary : AppTheme.textSecondary,
+                                  isLiked
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isLiked
+                                      ? AppTheme.primary
+                                      : AppTheme.textSecondary,
                                   size: 28,
                                 ),
                                 onPressed: () {
@@ -443,29 +537,29 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Progress Slider
               _buildProgressSlider(audio),
-              
+
               const SizedBox(height: 16),
-              
+
               // Controls
               _buildControls(audio),
-              
+
               const Spacer(),
-              
+
               // Tab Bar
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                   _buildTab('Antrean', false),
-                   _buildTab('Lirik', false),
-                   _buildTab('About', false),
+                  _buildTab('Antrean', false),
+                  _buildTab('Lirik', false),
+                  _buildTab('About', false),
                 ],
               ),
-              
+
               const SizedBox(height: 16),
             ],
           ),
@@ -493,60 +587,78 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
       stream: audio.positionStream,
       builder: (context, snapshot) {
         final duration = audio.duration;
-        
+
         if (duration.inMilliseconds <= 0) {
           return _buildSliderLayout(0.0, 0, 0, false, null);
         }
-        
+
         final streamPosition = snapshot.data ?? Duration.zero;
         final currentPosition = _isDraggingSlider
-            ? Duration(milliseconds: (_dragSliderValue * duration.inMilliseconds).round())
+            ? Duration(
+                milliseconds: (_dragSliderValue * duration.inMilliseconds)
+                    .round(),
+              )
             : streamPosition;
-        
+
         final targetSliderValue = _isDraggingSlider
             ? _dragSliderValue
-            : (streamPosition.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
-            
-        final shouldAnimate = audio.isSongEnding && !_isDraggingSlider && _previousSliderValue > 0.1;
-        
+            : (streamPosition.inMilliseconds / duration.inMilliseconds).clamp(
+                0.0,
+                1.0,
+              );
+
+        final shouldAnimate =
+            audio.isSongEnding &&
+            !_isDraggingSlider &&
+            _previousSliderValue > 0.1;
+
         if (!audio.isSongEnding) {
           _previousSliderValue = targetSliderValue;
         }
 
         return _buildSliderLayout(
-          targetSliderValue, 
-          currentPosition.inMilliseconds, 
+          targetSliderValue,
+          currentPosition.inMilliseconds,
           duration.inMilliseconds,
           shouldAnimate,
           (value) async {
-             final newPosition = Duration(milliseconds: (value * duration.inMilliseconds).round());
-             await audio.seek(newPosition);
-             if (mounted) setState(() => _isDraggingSlider = false);
-          }
+            final newPosition = Duration(
+              milliseconds: (value * duration.inMilliseconds).round(),
+            );
+            await audio.seek(newPosition);
+            if (mounted) setState(() => _isDraggingSlider = false);
+          },
         );
       },
     );
   }
 
-  Widget _buildSliderLayout(double value, int currentMs, int durationMs, bool animate, Function(double)? onSeekEnd) {
-     return Column(
-       children: [
-         SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: AppTheme.primary,
-              inactiveTrackColor: AppTheme.divider,
-              thumbColor: AppTheme.primary,
-              overlayColor: AppTheme.primary.withOpacity(0.2),
-            ),
-            child: animate 
+  Widget _buildSliderLayout(
+    double value,
+    int currentMs,
+    int durationMs,
+    bool animate,
+    Function(double)? onSeekEnd,
+  ) {
+    return Column(
+      children: [
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 4,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            activeTrackColor: AppTheme.primary,
+            inactiveTrackColor: AppTheme.divider,
+            thumbColor: AppTheme.primary,
+            overlayColor: AppTheme.primary.withOpacity(0.2),
+          ),
+          child: animate
               ? TweenAnimationBuilder<double>(
                   key: ValueKey('anim_slider'),
                   tween: Tween(begin: _previousSliderValue, end: 0.0),
                   duration: const Duration(milliseconds: 500),
-                  builder: (context, v, child) => Slider(value: v, onChanged: null),
+                  builder: (context, v, child) =>
+                      Slider(value: v, onChanged: null),
                 )
               : Slider(
                   value: value,
@@ -556,19 +668,25 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
                   }),
                   onChangeEnd: onSeekEnd,
                 ),
-         ),
-         Padding(
-           padding: const EdgeInsets.symmetric(horizontal: 16),
-           child: Row(
-             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-             children: [
-               Text(_formatDuration(Duration(milliseconds: currentMs)), style: AppTheme.caption.copyWith(fontSize: 12)),
-               Text(_formatDuration(Duration(milliseconds: durationMs)), style: AppTheme.caption.copyWith(fontSize: 12)),
-             ],
-           ),
-         ),
-       ],
-     );
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _formatDuration(Duration(milliseconds: currentMs)),
+                style: AppTheme.caption.copyWith(fontSize: 12),
+              ),
+              Text(
+                _formatDuration(Duration(milliseconds: durationMs)),
+                style: AppTheme.caption.copyWith(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildControls(ExoPlayerService audio) {
@@ -576,11 +694,20 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         IconButton(
-          icon: Icon(Icons.shuffle_rounded, color: audio.isShuffleMode ? AppTheme.primary : AppTheme.textSecondary),
+          icon: Icon(
+            Icons.shuffle_rounded,
+            color: audio.isShuffleMode
+                ? AppTheme.primary
+                : AppTheme.textSecondary,
+          ),
           onPressed: audio.toggleShuffle,
         ),
         IconButton(
-          icon: const Icon(Icons.skip_previous_rounded, size: 36, color: AppTheme.textPrimary),
+          icon: const Icon(
+            Icons.skip_previous_rounded,
+            size: 36,
+            color: AppTheme.textPrimary,
+          ),
           onPressed: audio.playPrevious,
         ),
         Container(
@@ -591,9 +718,9 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Color(0x66FF6B35),
+                color: Color(0x66FF6B35), // Orange glow
                 blurRadius: 20,
-                offset: Offset(0, 10),
+                offset: Offset(0, 8),
               ),
             ],
           ),
@@ -607,13 +734,21 @@ class ExpandablePlayerState extends State<ExpandablePlayer> with TickerProviderS
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.skip_next_rounded, size: 36, color: AppTheme.textPrimary),
+          icon: const Icon(
+            Icons.skip_next_rounded,
+            size: 36,
+            color: AppTheme.textPrimary,
+          ),
           onPressed: audio.playNext,
         ),
         IconButton(
           icon: Icon(
-            audio.loopMode == LoopMode.one ? Icons.repeat_one_rounded : Icons.repeat_rounded,
-            color: audio.loopMode == LoopMode.off ? AppTheme.textSecondary : AppTheme.primary,
+            audio.loopMode == LoopMode.one
+                ? Icons.repeat_one_rounded
+                : Icons.repeat_rounded,
+            color: audio.loopMode == LoopMode.off
+                ? AppTheme.textSecondary
+                : AppTheme.primary,
           ),
           onPressed: audio.toggleLoop,
         ),

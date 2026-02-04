@@ -50,25 +50,13 @@ class AppTheme {
   static BoxDecoration cardDecoration = BoxDecoration(
     color: surface,
     borderRadius: BorderRadius.circular(16),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withOpacity(0.05),
-        blurRadius: 10,
-        offset: const Offset(0, 4),
-      ),
-    ],
+    // No shadow for performance
   );
 
   static BoxDecoration gradientButtonDecoration = BoxDecoration(
     gradient: primaryGradient,
     borderRadius: BorderRadius.circular(30),
-    boxShadow: [
-      BoxShadow(
-        color: primary.withOpacity(0.3),
-        blurRadius: 15,
-        offset: const Offset(0, 6),
-      ),
-    ],
+    // No shadow for performance
   );
 
   // Theme Data

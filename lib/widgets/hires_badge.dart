@@ -22,13 +22,6 @@ class AnimatedHiResBadge extends StatelessWidget {
           color: const Color(0xFFFFD700).withOpacity(0.5),
           width: 0.5,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFF6B35).withOpacity(0.4),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
       ),
       child: const Text(
         'Hi-Res',
@@ -37,13 +30,6 @@ class AnimatedHiResBadge extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.bold,
           letterSpacing: 0.3,
-          shadows: [
-            Shadow(
-              color: Colors.black26,
-              blurRadius: 2,
-              offset: Offset(0, 1),
-            ),
-          ],
         ),
       ),
     );
