@@ -5,33 +5,31 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import '../models/playlist.dart';
 import '../models/song.dart';
 import '../models/gradient_config.dart';
-import '../services/liked_songs_service.dart';
+import '../services/playlist_service.dart';
+import '../services/song_service.dart';
 import '../services/exoplayer_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/gradient_picker_sheet.dart';
 import '../widgets/song_menu_sheet.dart';
 import '../widgets/hires_badge.dart';
 
-class LikedSongsScreen extends StatefulWidget {
-  const LikedSongsScreen({super.key});
+class PlaylistScreen extends StatefulWidget {
+  final Playlist playlist;
+
+  const PlaylistScreen({super.key, required this.playlist});
 
   @override
-  State<LikedSongsScreen> createState() => _LikedSongsScreenState();
+  State<PlaylistScreen> createState() => _PlaylistScreenState();
 }
 
-class _LikedSongsScreenState extends State<LikedSongsScreen> {
-  final _likedSongsService = LikedSongsService();
+class _PlaylistScreenState extends State<PlaylistScreen> {
+  final _playlistService = PlaylistService();
+  final _songService = SongService();
   final _audioService = ExoPlayerService();
   bool _isShuffleOn = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize service to load cover and gradient from storage
-    _likedSongsService.init();
-  }
 
   Future<void> _pickAndCropImage() async {
     try {
@@ -40,13 +38,13 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
       final XFile? picked = await picker.pickImage(source: ImageSource.gallery);
       if (picked == null) return;
 
-      // Step 2: Crop image
+      // Step 2: Crop image (using newer image_cropper API)
       final croppedFile = await ImageCropper().cropImage(
         sourcePath: picked.path,
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
         uiSettings: [
           AndroidUiSettings(
-            toolbarTitle: 'Crop Cover',
+            toolbarTitle: 'Crop Playlist Cover',
             toolbarColor: AppTheme.primary,
             toolbarWidgetColor: Colors.white,
             lockAspectRatio: false,
@@ -77,8 +75,13 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
         ),
       );
 
+      // Fix: If user cancels gradient picker (returns null), ABORT the whole flow
+      // Do not save the image if the wizard was cancelled.
+      if (gradientConfig == null) return;
+
       // Step 5: Save everything
-      await _likedSongsService.setPlaylistCover(
+      await _playlistService.setPlaylistCover(
+        widget.playlist.id,
         croppedFile.path,
         gradientConfig: gradientConfig,
       );
@@ -96,10 +99,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     }
   }
 
-  void _showGradientPicker() async {
-    final coverPath = _likedSongsService.playlistCoverPath;
-    if (coverPath == null) return;
-
+  void _showGradientPicker(String coverPath) async {
     try {
       final image = FileImage(File(coverPath));
       final paletteGenerator = await PaletteGenerator.fromImageProvider(image);
@@ -112,13 +112,14 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
         isScrollControlled: true,
         builder: (context) => GradientPickerSheet(
           palette: paletteGenerator,
-          initialConfig: _likedSongsService.gradientConfig,
+          initialConfig: widget.playlist.gradientConfig,
           coverImagePath: coverPath,
         ),
       );
 
       if (gradientConfig != null) {
-        await _likedSongsService.setPlaylistCover(
+        await _playlistService.setPlaylistCover(
+          widget.playlist.id,
           coverPath,
           gradientConfig: gradientConfig,
         );
@@ -143,13 +144,21 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: ListenableBuilder(
-        listenable: _likedSongsService,
+        listenable: Listenable.merge([_playlistService, _songService]),
         builder: (context, _) {
-          final songs = _likedSongsService.likedSongs;
-          final coverPath = _likedSongsService.playlistCoverPath;
+          // Get current playlist data
+          final playlist = _playlistService.playlists.firstWhere(
+            (p) => p.id == widget.playlist.id,
+            orElse: () => widget.playlist,
+          );
+
+          // Get songs from IDs
+          final List<Song> songs = _songService.getSongsByIds(playlist.songIds);
 
           // Get gradient colors
-          final gradientColors = _likedSongsService.getGradientColors();
+          final gradientColors = playlist.gradientConfig != null
+              ? playlist.gradientConfig!.getColors()
+              : [Colors.blue.shade800, Colors.purple.shade800];
 
           // Calculate total duration
           final int totalSeconds = songs.fold(
@@ -178,6 +187,44 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                     padding: EdgeInsets.zero,
                   ),
                 ),
+                actions: [
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert),
+                    color: AppTheme.surface,
+                    onSelected: (value) {
+                      if (value == 'delete') {
+                        _showDeleteConfirmation();
+                      } else if (value == 'rename') {
+                        _showRenameDialog();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'rename',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit, color: Colors.black87),
+                            SizedBox(width: 12),
+                            Text('Rename Playlist'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: Colors.red),
+                            SizedBox(width: 12),
+                            Text(
+                              'Delete Playlist',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 flexibleSpace: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final double top = constraints.biggest.height;
@@ -213,12 +260,12 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                                 top:
                                     MediaQuery.of(context).padding.top +
                                     kToolbarHeight,
-                                left: 24, // Matched with PlaylistScreen
+                                left: 24, // Matched with song list (16+8)
                               ),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Cover with icons
+                                  // Playlist Cover
                                   GestureDetector(
                                     onTap: _pickAndCropImage,
                                     child: Stack(
@@ -232,40 +279,36 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                                               8,
                                             ),
                                             image:
-                                                _getSafeImage(coverPath) != null
+                                                _getSafeImage(
+                                                      playlist.coverPath,
+                                                    ) !=
+                                                    null
                                                 ? DecorationImage(
                                                     image: _getSafeImage(
-                                                      coverPath,
+                                                      playlist.coverPath,
                                                     )!,
                                                     fit: BoxFit.cover,
                                                   )
                                                 : null,
+                                            gradient: playlist.coverPath == null
+                                                ? LinearGradient(
+                                                    colors: gradientColors,
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                  )
+                                                : null,
                                           ),
-                                          child: coverPath == null
-                                              ? Container(
-                                                  decoration: BoxDecoration(
-                                                    gradient: LinearGradient(
-                                                      colors: gradientColors,
-                                                      begin: Alignment.topLeft,
-                                                      end:
-                                                          Alignment.bottomRight,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                  ),
-                                                  child: const Center(
-                                                    child: Icon(
-                                                      Icons.favorite,
-                                                      color: Colors.white,
-                                                      size: 64,
-                                                    ),
+                                          child: playlist.coverPath == null
+                                              ? const Center(
+                                                  child: Icon(
+                                                    Icons.playlist_play,
+                                                    color: Colors.white,
+                                                    size: 64,
                                                   ),
                                                 )
                                               : null,
                                         ),
-                                        // Camera icon
+                                        // Camera icon overlay
                                         Positioned(
                                           bottom: 4,
                                           right: 4,
@@ -283,14 +326,15 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                                             ),
                                           ),
                                         ),
-                                        // Palette icon
-                                        if (coverPath != null)
+                                        // Gradient picker icon
+                                        if (playlist.coverPath != null)
                                           Positioned(
                                             bottom: 4,
                                             left: 4,
                                             child: GestureDetector(
-                                              onTap: () =>
-                                                  _showGradientPicker(),
+                                              onTap: () => _showGradientPicker(
+                                                playlist.coverPath!,
+                                              ),
                                               child: Container(
                                                 padding: const EdgeInsets.all(
                                                   6,
@@ -323,19 +367,21 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                                       mainAxisAlignment:
                                           MainAxisAlignment.start,
                                       children: [
-                                        const Text(
-                                          'Liked Songs',
-                                          style: TextStyle(
+                                        Text(
+                                          playlist.name.length > 25
+                                              ? playlist.name.substring(0, 25)
+                                              : playlist.name,
+                                          style: const TextStyle(
                                             fontSize: 28,
                                             fontWeight: FontWeight.bold,
                                             color: Colors.white,
                                           ),
                                           maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
+                                          overflow: TextOverflow.visible,
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
-                                          '${songs.length} songs • $totalMinutes Minutes',
+                                          '${playlist.songIds.length} songs • $totalMinutes Minutes',
                                           style: const TextStyle(
                                             fontSize: 14,
                                             color: Colors.white70,
@@ -359,7 +405,8 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.only(
-                    left: 20, // Match PlaylistScreen
+                    left:
+                        20, // Center match: 20 + 28 = 48 (Song List Image Center)
                     top: 16,
                     bottom: 16,
                     right: 16,
@@ -414,7 +461,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                             child: Column(
                               children: [
                                 Icon(
-                                  Icons.favorite_border,
+                                  Icons.music_note,
                                   size: 64,
                                   color: AppTheme.textSecondary.withOpacity(
                                     0.5,
@@ -422,8 +469,15 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  'No liked songs yet',
+                                  'No songs in this playlist',
                                   style: AppTheme.caption,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Add songs from the song menu',
+                                  style: AppTheme.caption.copyWith(
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ],
                             ),
@@ -454,14 +508,14 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
       child: InkWell(
         onTap: () => _audioService.playQueue(allSongs, index),
         onLongPress: () {
-          SongMenuSheet.show(context, song);
+          SongMenuSheet.show(context, song, playlistId: widget.playlist.id);
         },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.only(left: 8, right: 0, top: 8, bottom: 8),
           child: Row(
             children: [
-              // Album Art (48x48 like playlist)
+              // Album Art (48x48 like LikedSongs)
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(4),
@@ -523,13 +577,13 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                     Row(
                       children: [
                         // Badges
-                        if (song.isHiRes) ...{
+                        if (song.isHiRes) ...[
                           const AnimatedHiResBadge(),
                           const SizedBox(width: 6),
-                        } else if (song.isLossless) ...{
+                        ] else if (song.isLossless) ...[
                           const LosslessBadge(),
                           const SizedBox(width: 6),
-                        },
+                        ],
                         // Artist
                         Expanded(
                           child: Text(
@@ -555,7 +609,11 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                 icon: const Icon(Icons.more_vert, size: 20),
                 color: AppTheme.textSecondary,
                 onPressed: () {
-                  SongMenuSheet.show(context, song);
+                  SongMenuSheet.show(
+                    context,
+                    song,
+                    playlistId: widget.playlist.id, // Pass playlist context
+                  );
                 },
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -563,6 +621,95 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showRenameDialog() {
+    final controller = TextEditingController(text: widget.playlist.name);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Rename Playlist', style: AppTheme.heading2),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: AppTheme.body,
+          maxLength: 25,
+          decoration: InputDecoration(
+            hintText: 'Playlist name',
+            hintStyle: AppTheme.caption,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppTheme.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.trim().isNotEmpty) {
+                await _playlistService.renamePlaylist(
+                  widget.playlist.id,
+                  controller.text.trim(),
+                );
+                if (mounted) Navigator.pop(context);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Delete Playlist?', style: AppTheme.heading2),
+        content: Text(
+          'Are you sure you want to delete "${widget.playlist.name}"?',
+          style: AppTheme.body,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppTheme.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // Close dialog first
+              Navigator.pop(dialogContext); // Use dialogContext
+
+              // Delete playlist
+              await _playlistService.deletePlaylist(widget.playlist.id);
+
+              // Go back to previous screen
+              if (mounted) {
+                Navigator.pop(context); // Use outer context
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
   }

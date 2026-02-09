@@ -4,11 +4,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
 import '../services/exoplayer_service.dart';
 import '../services/play_history_service.dart';
+
+import '../services/song_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hires_badge.dart';
-import '../widgets/expandable_player.dart'; // New Import
-import '../widgets/mini_equalizer.dart'; // New Import
-import 'player_screen.dart';
+import '../widgets/expandable_player.dart';
+import '../widgets/mini_equalizer.dart';
+import '../widgets/song_menu_sheet.dart'; // New Import
+import '../widgets/shortcut_grid_item.dart';
+
 import 'search_screen.dart';
 import 'collection_screen.dart';
 import 'settings_screen.dart';
@@ -78,27 +82,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Scaffold(
               backgroundColor: AppTheme.background,
               body: IndexedStack(index: _currentIndex, children: _screens),
-              bottomNavigationBar: ValueListenableBuilder<double>(
-                valueListenable:
-                    _playerKey.currentState?.animationNotifier ??
-                    ValueNotifier(0.0),
-                builder: (context, playerValue, child) {
-                  // Fade out (1 when closed, 0 when open)
-                  final opacity = (1 - playerValue).clamp(0.0, 1.0);
-                  // Slide down
-                  final offset = playerValue * 120;
-
-                  return Opacity(
-                    opacity: opacity,
-                    child: Transform.translate(
-                      offset: Offset(0, offset),
-                      child: IgnorePointer(
-                        ignoring: playerValue > 0.3,
-                        child: _buildBottomNav(),
-                      ),
-                    ),
-                  );
-                },
+              bottomNavigationBar: _AnimatedBottomNav(
+                playerKey: _playerKey,
+                child: _buildBottomNav(),
               ),
             ),
           ),
@@ -199,10 +185,26 @@ class _HomeContentState extends State<_HomeContent> {
     _albumPageController = PageController();
     _quickPicksPageController = PageController();
 
+    // Listen to history changes to register songs safely
+    _history.addListener(_updateSongRegistry);
+    // Initial check
+    _updateSongRegistry();
+
     // Pre-cache images after first frame to improve scrolling performance
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _precacheImages();
     });
+  }
+
+  void _updateSongRegistry() {
+    // Register songs with SongService for playlist lookups
+    // This is safe to call here as it just updates the cache
+    if (_history.frequentSongs.isNotEmpty) {
+      SongService().registerSongs(_history.frequentSongs);
+    }
+    if (_history.shuffledSongs.isNotEmpty) {
+      SongService().registerSongs(_history.shuffledSongs);
+    }
   }
 
   void _precacheImages() {
@@ -236,6 +238,8 @@ class _HomeContentState extends State<_HomeContent> {
               child: ListenableBuilder(
                 listenable: _history,
                 builder: (context, _) {
+                  // NO registerSongs calls here anymore!
+
                   return SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,7 +310,7 @@ class _HomeContentState extends State<_HomeContent> {
           ),
         ),
         SizedBox(
-          height: 296,
+          height: 284, // Adjusted height for 54px items (4 * 66 + padding)
           child: PageView.builder(
             controller: _quickPicksPageController,
             itemCount: totalPages,
@@ -315,7 +319,7 @@ class _HomeContentState extends State<_HomeContent> {
             },
             itemBuilder: (context, pageIndex) {
               return Padding(
-                padding: const EdgeInsets.only(left: 16, right: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: _buildQuickPickColumn(songs, pageIndex, itemsPerColumn),
               );
             },
@@ -349,22 +353,28 @@ class _HomeContentState extends State<_HomeContent> {
   Widget _buildQuickPickItem(Song song, int index, List<Song> songs) {
     final isPlaying = _audio.currentSong?.id == song.id;
 
-    return InkWell(
-      onTap: () => _playSong(song, index, songs),
-      borderRadius: BorderRadius.circular(8),
-      child: RepaintBoundary(
-        // Optimization for scroll performance
-        child: Container(
-          height: 72,
-          padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        // No background color, transparent so ripple shows on canvas/scaffold
+      ),
+      child: InkWell(
+        onTap: () => _playSong(song, index, songs),
+        onLongPress: () {
+          SongMenuSheet.show(context, song);
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 6, right: 0, top: 4, bottom: 4),
           child: Row(
             children: [
               // Album art with Equalizer
               Stack(
                 children: [
                   Container(
-                    height: 56,
-                    width: 56,
+                    height: 54,
+                    width: 54,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(6),
                       color: AppTheme.divider,
@@ -372,11 +382,11 @@ class _HomeContentState extends State<_HomeContent> {
                     child: song.albumCover != null
                         ? CachedNetworkImage(
                             imageUrl: song.albumCover!,
-                            memCacheWidth: 168, // Restored (56 * 3)
-                            maxWidthDiskCache: 168,
+                            memCacheWidth: 162, // 54 * 3
+                            maxWidthDiskCache: 162,
                             fadeInDuration: Duration.zero,
-                            width: 56,
-                            height: 56,
+                            width: 54,
+                            height: 54,
                             fit: BoxFit.cover,
                             imageBuilder: (context, imageProvider) => Container(
                               decoration: BoxDecoration(
@@ -491,7 +501,7 @@ class _HomeContentState extends State<_HomeContent> {
                 icon: const Icon(Icons.more_vert, size: 20),
                 color: AppTheme.textSecondary,
                 onPressed: () {
-                  // TODO: Show song options
+                  SongMenuSheet.show(context, song);
                 },
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -582,85 +592,9 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   Widget _buildShortcutItem(Song song, int index, List<Song> songs) {
-    final isPlaying = _audio.currentSong?.id == song.id;
-
-    return GestureDetector(
+    return ShortcutGridItem(
+      song: song,
       onTap: () => _playSong(song, index, songs),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Album cover
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(4),
-              color: AppTheme.divider,
-            ),
-            child: CachedNetworkImage(
-              imageUrl: song.albumCover ?? '',
-              memCacheWidth: 450, // Restored (Grid ~150 * 3)
-              maxWidthDiskCache: 450,
-              fadeInDuration: Duration.zero,
-              width: double.infinity,
-              height: double.infinity,
-              fit: BoxFit.cover,
-              imageBuilder: (context, imageProvider) => Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  image: DecorationImage(
-                    image: imageProvider,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-              placeholder: (context, url) => Container(color: AppTheme.divider),
-              errorWidget: (context, url, error) => const Center(
-                child: Icon(
-                  Icons.music_note,
-                  size: 24,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ),
-          ),
-
-          // Gradient overlay at bottom
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              height: 30,
-              decoration: BoxDecoration(
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(4),
-                ), // Match corner
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
-                ),
-              ),
-            ),
-          ),
-          // Song title inside
-          Positioned(
-            left: 4,
-            right: 4,
-            bottom: 4,
-            child: Text(
-              song.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 11,
-                shadows: [Shadow(color: Colors.black, blurRadius: 4)],
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -723,6 +657,70 @@ class _HomeContentState extends State<_HomeContent> {
   void dispose() {
     _albumPageController.dispose();
     _quickPicksPageController.dispose();
+    _history.removeListener(_updateSongRegistry);
     super.dispose();
+  }
+}
+
+// Separate widget to handle bottom nav animation with player state
+class _AnimatedBottomNav extends StatefulWidget {
+  final GlobalKey<ExpandablePlayerState> playerKey;
+  final Widget child;
+
+  const _AnimatedBottomNav({required this.playerKey, required this.child});
+
+  @override
+  State<_AnimatedBottomNav> createState() => _AnimatedBottomNavState();
+}
+
+class _AnimatedBottomNavState extends State<_AnimatedBottomNav> {
+  Animation<double>? _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    // Wait for first frame to get player state
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _connectToPlayer();
+    });
+  }
+
+  void _connectToPlayer() {
+    final playerState = widget.playerKey.currentState;
+    if (playerState != null && mounted) {
+      setState(() {
+        _animation = playerState.animation;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_animation == null) {
+      // Player not ready yet, show static nav
+      return widget.child;
+    }
+
+    return AnimatedBuilder(
+      animation: _animation!,
+      builder: (context, child) {
+        final playerValue = _animation!.value;
+        // Fade out (1 when closed, 0 when open)
+        final opacity = (1 - playerValue).clamp(0.0, 1.0);
+        // Slide down
+        final offset = playerValue * 120;
+
+        return Opacity(
+          opacity: opacity,
+          child: Transform.translate(
+            offset: Offset(0, offset),
+            child: IgnorePointer(
+              ignoring: playerValue > 0.3,
+              child: widget.child,
+            ),
+          ),
+        );
+      },
+    );
   }
 }

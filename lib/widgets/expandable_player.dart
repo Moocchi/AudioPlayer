@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'dart:ui';
 import '../models/song.dart';
 import '../services/exoplayer_service.dart';
@@ -50,11 +51,12 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 300),
     );
     _curvedAnimation = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeInOutCubic, // Smooth ease in/out
+      curve: Curves.easeOutCubic, // Fast start (Opening)
+      reverseCurve: Curves.easeInCubic, // Fast start (Closing)
     );
 
     // Update notifier on animation changes
@@ -134,7 +136,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
 
             // Margins for mini player look
             final horizontalMargin = lerpDouble(12, 0, value)!;
-            final borderRadius = lerpDouble(16, 0, value)!;
+            final borderRadius = lerpDouble(12, 0, value)!;
 
             return Positioned(
               bottom: bottomPos,
@@ -154,7 +156,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
                   elevation: 0, // No shadow for performance
                   color: Color.lerp(Colors.white, AppTheme.background, value),
                   borderRadius: BorderRadius.circular(borderRadius),
-                  clipBehavior: Clip.hardEdge, // Faster clipping
+                  clipBehavior: Clip.antiAlias, // Smoother clipping
                   child: Stack(
                     children: [
                       // Mini Player Content (Always present, fades out)
@@ -174,20 +176,17 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
                       // Only show full player if song exists
                       if (song != null)
                         RepaintBoundary(
-                          child: Opacity(
-                            opacity: value,
-                            child: IgnorePointer(
-                              ignoring: value < 0.5,
-                              child: OverflowBox(
-                                alignment: Alignment.topCenter,
-                                minHeight: screenHeight,
-                                maxHeight: screenHeight,
-                                child: _buildFullPlayerContent(
-                                  context,
-                                  audio,
-                                  song,
-                                  value,
-                                ),
+                          child: IgnorePointer(
+                            ignoring: value < 0.5,
+                            child: OverflowBox(
+                              alignment: Alignment.topCenter,
+                              minHeight: screenHeight,
+                              maxHeight: screenHeight,
+                              child: _buildFullPlayerContent(
+                                context,
+                                audio,
+                                song,
+                                value,
                               ),
                             ),
                           ),
@@ -226,12 +225,22 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
       top: currentTop,
       width: currentSize,
       height: currentSize,
-      child: Material(
-        elevation: lerpDouble(0, 12, value)!, // Shadow grows as it expands
-        shadowColor: AppTheme.primary.withOpacity(0.3), // Orange theme shadow
-        color: AppTheme.background,
-        borderRadius: BorderRadius.circular(lerpDouble(10, 20, value)!),
-        clipBehavior: Clip.hardEdge,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppTheme.background,
+          borderRadius: BorderRadius.circular(lerpDouble(8, 16, value)!),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primary.withOpacity(
+                lerpDouble(0.0, 0.3, value)!.clamp(0.0, 1.0),
+              ),
+              blurRadius: lerpDouble(0, 24, value)!,
+              offset: Offset(0, lerpDouble(0, 12, value)!),
+              spreadRadius: lerpDouble(0, 4, value)!,
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
         child: song.albumCover != null
             ? CachedNetworkImage(
                 imageUrl: song.albumCover!,
@@ -377,6 +386,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
           height: 2,
           child: StreamBuilder<Duration>(
             stream: audio.positionStream,
+            initialData: audio.position,
             builder: (context, snapshot) {
               final position = snapshot.data ?? Duration.zero;
               final duration = audio.duration;
@@ -413,155 +423,180 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 32,
-                      ),
-                      onPressed: _toggle,
-                    ),
-                    const Expanded(
-                      child: Center(
-                        child: Text(
-                          'NOW PLAYING',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textSecondary,
-                            letterSpacing: 1,
+          child: Opacity(
+            opacity: ((value - 0.3) / 0.7).clamp(0.0, 1.0), // Fade in late
+            child: Transform.translate(
+              offset: Offset(
+                0,
+                40 * (1 - ((value - 0.3) / 0.7).clamp(0.0, 1.0)),
+              ), // Slide up 40px
+              child: Column(
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 32,
                           ),
+                          onPressed: _toggle,
                         ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.queue_music_rounded),
-                      onPressed: () => QueueSheet.show(context),
-                    ),
-                  ],
-                ),
-              ),
-
-              SizedBox(height: 20 + _albumArtSizeFull + 32), // Spacer for Image
-              // Song Info
-              Center(
-                child: SizedBox(
-                  width: _albumArtSizeFull,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (song.isHiRes) ...[
-                        const AnimatedHiResBadge(),
-                        const SizedBox(height: 12),
-                      ] else if (song.isLossless) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1DB954),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'Lossless',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                        const Expanded(
+                          child: Center(
+                            child: Text(
+                              'NOW PLAYING',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textSecondary,
+                                letterSpacing: 1,
+                              ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        IconButton(
+                          icon: const Icon(Icons.queue_music_rounded),
+                          onPressed: () => QueueSheet.show(context),
+                        ),
                       ],
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                    ),
+                  ),
+
+                  SizedBox(
+                    height: 20 + _albumArtSizeFull + 32,
+                  ), // Spacer for Image
+                  // Song Info
+                  Center(
+                    child: SizedBox(
+                      width: _albumArtSizeFull,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  song.title,
-                                  style: AppTheme.heading1.copyWith(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
+                          if (song.isHiRes) ...[
+                            const AnimatedHiResBadge(),
+                            const SizedBox(height: 12),
+                          ] else if (song.isLossless) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1DB954),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Lossless',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  song.artist,
-                                  style: AppTheme.caption.copyWith(
-                                    fontSize: 16,
-                                    color: AppTheme.textSecondary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                          ListenableBuilder(
-                            listenable: LikedSongsService(),
-                            builder: (context, _) {
-                              final isLiked = LikedSongsService().isLiked(
-                                song.id,
-                              );
-                              return IconButton(
-                                icon: Icon(
-                                  isLiked
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  color: isLiked
-                                      ? AppTheme.primary
-                                      : AppTheme.textSecondary,
-                                  size: 28,
+                            const SizedBox(height: 12),
+                          ],
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      song.title,
+                                      style: AppTheme.heading1.copyWith(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      song.artist,
+                                      style: AppTheme.caption.copyWith(
+                                        fontSize: 16,
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ),
-                                onPressed: () {
-                                  LikedSongsService().toggleLike(song);
+                              ),
+                              ListenableBuilder(
+                                listenable: LikedSongsService(),
+                                builder: (context, _) {
+                                  final isLiked = LikedSongsService().isLiked(
+                                    song.id,
+                                  );
+                                  return IconButton(
+                                    icon: Icon(
+                                      isLiked
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      color: isLiked
+                                          ? AppTheme.primary
+                                          : AppTheme.textSecondary,
+                                      size: 28,
+                                    ),
+                                    onPressed: () {
+                                      final wasLiked = LikedSongsService()
+                                          .isLiked(song.id);
+                                      LikedSongsService().toggleLike(song);
+
+                                      if (!wasLiked) {
+                                        // Show toast only when adding to liked songs
+                                        Fluttertoast.showToast(
+                                          msg:
+                                              '"${song.title}" ditambahkan ke Liked Songs',
+                                          toastLength: Toast.LENGTH_SHORT,
+                                          gravity: ToastGravity.BOTTOM,
+                                          backgroundColor: Colors.black54,
+                                          textColor: Colors.white,
+                                        );
+                                      }
+                                    },
+                                  );
                                 },
-                              );
-                            },
+                              ),
+                            ],
                           ),
                         ],
                       ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Progress Slider
+                  _buildProgressSlider(audio),
+
+                  const SizedBox(height: 16),
+
+                  // Controls
+                  _buildControls(audio),
+
+                  const Spacer(),
+
+                  // Tab Bar
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildTab('Antrean', false),
+                      _buildTab('Lirik', false),
+                      _buildTab('About', false),
                     ],
                   ),
-                ),
-              ),
 
-              const SizedBox(height: 24),
-
-              // Progress Slider
-              _buildProgressSlider(audio),
-
-              const SizedBox(height: 16),
-
-              // Controls
-              _buildControls(audio),
-
-              const Spacer(),
-
-              // Tab Bar
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildTab('Antrean', false),
-                  _buildTab('Lirik', false),
-                  _buildTab('About', false),
+                  const SizedBox(height: 16),
                 ],
               ),
-
-              const SizedBox(height: 16),
-            ],
+            ),
           ),
         ),
       ),
@@ -585,6 +620,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
   Widget _buildProgressSlider(ExoPlayerService audio) {
     return StreamBuilder<Duration>(
       stream: audio.positionStream,
+      initialData: audio.position,
       builder: (context, snapshot) {
         final duration = audio.duration;
 

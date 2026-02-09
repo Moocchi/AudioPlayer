@@ -67,6 +67,10 @@ class PlaybackService : Service() {
         
         var skipCallback: SkipCallback? = null
     }
+    
+    fun getPlayer(): Player? {
+        return player
+    }
 
     override fun onCreate() {
         super.onCreate()

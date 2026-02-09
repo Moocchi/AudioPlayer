@@ -6,9 +6,10 @@
 | ✓ | Fix seek and song timeline pause/play function and lossless playback bug |
 | ✓ | check if can Perfect Bit (not supported) |
 | ✓ | Previous and next button in media player and sync with app |
-| ` | Playlist, liked song, Quick choose, and quick Shortcut |
-| | Better animation |
+| ✓ | Playlist, liked song, Quick choose, and quick Shortcut |
+| ✓ | Better animation |
 | | SD card / internal cache saving |
+| | DAC Reader |
 | | Auto-fill queue according to song genre |
 | | Fade out transition song |
 | | Seamless playback |

@@ -151,15 +151,49 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, Playb
                 updateNotification(title, artist, albumCover)
                 result.success(null)
             }
+            "getPlaybackState" -> {
+                // Try to reconnect if null
+                ensurePlayerConnection()
+                
+                val stateMap = mutableMapOf<String, Any>()
+                stateMap["isPlaying"] = exoPlayer?.isPlaying ?: false
+                stateMap["position"] = exoPlayer?.currentPosition ?: 0L
+                stateMap["duration"] = exoPlayer?.duration ?: 0L
+                stateMap["playbackState"] = when (exoPlayer?.playbackState) {
+                    Player.STATE_IDLE -> "idle"
+                    Player.STATE_BUFFERING -> "buffering"
+                    Player.STATE_READY -> "ready"
+                    Player.STATE_ENDED -> "ended"
+                    else -> "unknown"
+                }
+                
+                // Try to get current metadata if available to verify sync
+                // Note: The service holds currentTitle/Artist, we could access them via PlaybackService if needed
+                
+                result.success(stateMap)
+            }
             else -> {
                 result.notImplemented()
             }
         }
     }
 
+    private fun ensurePlayerConnection() {
+        if (exoPlayer == null) {
+            val existingPlayer = PlaybackService.instance?.getPlayer()
+            if (existingPlayer != null && existingPlayer is ExoPlayer) {
+                exoPlayer = existingPlayer
+                exoPlayer?.addListener(this)
+                android.util.Log.d("ExoPlayer", "✅ Reconnected to existing ExoPlayer from PlaybackService")
+            }
+        }
+    }
+
     private fun setDashSource(url: String, result: Result) {
         try {
-            // Only create new player if not exists
+            ensurePlayerConnection()
+
+            // Only create new player if still null
             if (exoPlayer == null) {
                 // Use DefaultRenderersFactory for better device compatibility
                 // This avoids stuck loading issues on different hardware

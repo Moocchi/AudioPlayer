@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
-import '../services/audio_service.dart';
 import '../theme/app_theme.dart';
 import 'hires_badge.dart';
 
@@ -41,13 +40,15 @@ class SongTile extends StatelessWidget {
                 child: Text(
                   '${index! + 1}',
                   style: TextStyle(
-                    color: isPlaying ? AppTheme.primary : AppTheme.textSecondary,
+                    color: isPlaying
+                        ? AppTheme.primary
+                        : AppTheme.textSecondary,
                     fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
               ),
             if (index != null) const SizedBox(width: 8),
-            
+
             // Album cover with caching
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -63,7 +64,7 @@ class SongTile extends StatelessWidget {
                   : _placeholder(),
             ),
             const SizedBox(width: 12),
-            
+
             // Song info
             Expanded(
               child: Column(
@@ -78,7 +79,9 @@ class SongTile extends StatelessWidget {
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 15,
-                            color: isPlaying ? AppTheme.primary : AppTheme.textPrimary,
+                            color: isPlaying
+                                ? AppTheme.primary
+                                : AppTheme.textPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -90,7 +93,9 @@ class SongTile extends StatelessWidget {
                           song.durationFormatted,
                           style: TextStyle(
                             fontSize: 13,
-                            color: isPlaying ? AppTheme.primary : AppTheme.textSecondary,
+                            color: isPlaying
+                                ? AppTheme.primary
+                                : AppTheme.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -98,7 +103,7 @@ class SongTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  
+
                   // Badge + Artist row
                   Row(
                     children: [
@@ -107,7 +112,10 @@ class SongTile extends StatelessWidget {
                         const SizedBox(width: 6),
                       ] else if (song.isLossless) ...[
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFF1DB954),
                             borderRadius: BorderRadius.circular(4),
@@ -134,7 +142,7 @@ class SongTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  
+
                   // Size info
                   Text(
                     '${song.isHiRes ? "24-bit • " : "16-bit • "}${_getFileSize()}',

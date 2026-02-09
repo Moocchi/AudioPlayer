@@ -42,7 +42,11 @@ dependencies:
   audioplayers: ^6.5.1
   provider: ^6.1.5+1
   image_picker: ^1.0.7
+  image_cropper: ^8.0.2
   palette_generator: ^0.3.3+4
+  flutter_colorpicker: ^1.1.0
+  fluttertoast: ^8.2.2
+  reorderable_grid_view: ^2.2.8
 
 dev_dependencies:
   flutter_test:
