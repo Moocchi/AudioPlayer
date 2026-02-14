@@ -26,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  late final PageController _pageController;
   final GlobalKey<ExpandablePlayerState> _playerKey =
       GlobalKey<ExpandablePlayerState>();
   final GlobalKey<NavigatorState> _collectionNavKey =
@@ -44,6 +45,24 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
     const SettingsScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: _currentIndex);
+
+    // Auto-expand player when user taps a song (immediate, not on song change)
+    final audio = ExoPlayerService();
+    audio.shouldExpandPlayer.addListener(() {
+      _playerKey.currentState?.expand();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +88,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
         // 3. If on other tabs, go back to Home first (optional standard behavior)
         if (_currentIndex != 0) {
-          setState(() => _currentIndex = 0);
+          _pageController.animateToPage(
+            0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
           return;
         }
 
@@ -81,7 +104,14 @@ class _HomeScreenState extends State<HomeScreen> {
           RepaintBoundary(
             child: Scaffold(
               backgroundColor: AppTheme.background,
-              body: IndexedStack(index: _currentIndex, children: _screens),
+              body: PageView(
+                controller: _pageController,
+                physics: const BouncingScrollPhysics(),
+                onPageChanged: (index) {
+                  setState(() => _currentIndex = index);
+                },
+                children: _screens,
+              ),
               bottomNavigationBar: _AnimatedBottomNav(
                 playerKey: _playerKey,
                 child: _buildBottomNav(),
@@ -135,7 +165,13 @@ class _HomeScreenState extends State<HomeScreen> {
   ) {
     final isActive = _currentIndex == index;
     return InkWell(
-      onTap: () => setState(() => _currentIndex = index),
+      onTap: () {
+        _pageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      },
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -218,7 +254,7 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   void _playSong(Song song, int index, List<Song> songs) {
-    _audio.playQueue(songs, index);
+    _audio.playQueue(songs, index, userInitiated: true);
     _history.recordPlay(song);
     // Navigation removed - ExpandablePlayer handles it
   }

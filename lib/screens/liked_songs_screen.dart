@@ -132,9 +132,9 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     if (songs.isEmpty) return;
     if (_isShuffleOn) {
       final shuffled = List<Song>.from(songs)..shuffle();
-      _audioService.playQueue(shuffled, 0);
+      _audioService.playQueue(shuffled, 0, userInitiated: true);
     } else {
-      _audioService.playQueue(songs, 0);
+      _audioService.playQueue(songs, 0, userInitiated: true);
     }
   }
 
@@ -452,7 +452,8 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        onTap: () => _audioService.playQueue(allSongs, index),
+        onTap: () =>
+            _audioService.playQueue(allSongs, index, userInitiated: true),
         onLongPress: () {
           SongMenuSheet.show(context, song);
         },

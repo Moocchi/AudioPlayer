@@ -5,6 +5,7 @@ import 'services/exoplayer_service.dart';
 import 'services/play_history_service.dart';
 import 'services/liked_songs_service.dart';
 import 'services/playlist_service.dart';
+import 'services/settings_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -15,6 +16,7 @@ void main() async {
   await PlayHistoryService().init();
   await LikedSongsService().init();
   await PlaylistService().init();
+  await SettingsService().init();
 
   // Set status bar style
   SystemChrome.setSystemUIOverlayStyle(

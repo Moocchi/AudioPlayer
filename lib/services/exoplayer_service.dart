@@ -102,6 +102,9 @@ class ExoPlayerService extends ChangeNotifier {
   bool _isLoading = false;
   String _loadingStatus = '';
 
+  // Signal to expand player when user taps a song
+  final ValueNotifier<int> shouldExpandPlayer = ValueNotifier<int>(0);
+
   // Playback Modes
   bool _isShuffleMode = false;
   LoopMode _loopMode = LoopMode.off;
@@ -1012,10 +1015,19 @@ class ExoPlayerService extends ChangeNotifier {
   }
 
   /// Play queue of songs starting from specific index
-  Future<void> playQueue(List<Song> songs, int startIndex) async {
+  Future<void> playQueue(
+    List<Song> songs,
+    int startIndex, {
+    bool userInitiated = false,
+  }) async {
     debugPrint(
       '📋 playQueue called with ${songs.length} songs, startIndex: $startIndex',
     );
+
+    // Trigger player expand IMMEDIATELY if user initiated (don't wait for loading)
+    if (userInitiated) {
+      shouldExpandPlayer.value++;
+    }
 
     _queue = List.from(songs);
     _currentIndex = startIndex;

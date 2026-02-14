@@ -33,6 +33,10 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
     _controller.reverse();
   }
 
+  void expand() {
+    _controller.forward();
+  }
+
   // Dimensions
   static const double _miniPlayerHeight = 66.0;
   static const double _albumArtSizeMini = 48.0;

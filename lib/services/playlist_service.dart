@@ -47,7 +47,11 @@ class PlaylistService extends ChangeNotifier {
   }
 
   /// Create new playlist
-  Future<Playlist> createPlaylist(String name) async {
+  Future<Playlist?> createPlaylist(String name) async {
+    if (_playlists.length >= 20) {
+      debugPrint('⚠️ Playlist limit reached (20)');
+      return null;
+    }
     final playlist = Playlist(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       name: name,
@@ -100,12 +104,45 @@ class PlaylistService extends ChangeNotifier {
   }
 
   /// Reorder playlists
-  Future<void> reorderPlaylists(int oldIndex, int newIndex) async {
-    if (oldIndex < newIndex) {
+  Future<void> reorderPlaylists(
+    int oldIndex,
+    int newIndex, {
+    bool adjustIndex = true,
+  }) async {
+    if (adjustIndex && oldIndex < newIndex) {
       newIndex -= 1;
     }
     final Playlist item = _playlists.removeAt(oldIndex);
     _playlists.insert(newIndex, item);
+    notifyListeners();
+    await _savePlaylists();
+  }
+
+  /// Reorder by IDs (safer for ReorderableBuilder)
+  Future<void> reorderPlaylistsByOrderedIds(List<String> orderedIds) async {
+    final Map<String, Playlist> playlistMap = {
+      for (var p in _playlists) p.id: p,
+    };
+    final List<Playlist> newOrder = [];
+    for (var id in orderedIds) {
+      if (playlistMap.containsKey(id)) {
+        newOrder.add(playlistMap[id]!);
+      }
+    }
+    // append any missing (fallback)
+    for (var p in _playlists) {
+      if (!newOrder.any((np) => np.id == p.id)) {
+        newOrder.add(p);
+      }
+    }
+    _playlists = newOrder;
+    notifyListeners();
+    await _savePlaylists();
+  }
+
+  /// Update entire playlist list (for ReorderableBuilder)
+  Future<void> setPlaylists(List<Playlist> newPlaylists) async {
+    _playlists = newPlaylists;
     notifyListeners();
     await _savePlaylists();
   }

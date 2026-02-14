@@ -6,7 +6,6 @@ import '../services/exoplayer_service.dart';
 import '../services/play_history_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hires_badge.dart';
-import 'player_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -41,28 +40,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _playSong(int index) {
     final song = _songs[index];
-    _audio.playQueue(_songs, index);
+    _audio.playQueue(_songs, index, userInitiated: true);
     _history.recordPlay(song);
-
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, _) => const PlayerScreen(),
-        transitionsBuilder: (context, animation, _, child) {
-          return SlideTransition(
-            position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-                .animate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  ),
-                ),
-            child: child,
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 400),
-      ),
-    );
   }
 
   @override

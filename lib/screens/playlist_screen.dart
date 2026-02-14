@@ -133,9 +133,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     if (songs.isEmpty) return;
     if (_isShuffleOn) {
       final shuffled = List<Song>.from(songs)..shuffle();
-      _audioService.playQueue(shuffled, 0);
+      _audioService.playQueue(shuffled, 0, userInitiated: true);
     } else {
-      _audioService.playQueue(songs, 0);
+      _audioService.playQueue(songs, 0, userInitiated: true);
     }
   }
 
@@ -189,7 +189,16 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 ),
                 actions: [
                   PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert),
+                    icon: const Icon(
+                      Icons.more_vert,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(offset: Offset(-0.5, -0.5), color: Colors.black),
+                        Shadow(offset: Offset(0.5, -0.5), color: Colors.black),
+                        Shadow(offset: Offset(0.5, 0.5), color: Colors.black),
+                        Shadow(offset: Offset(-0.5, 0.5), color: Colors.black),
+                      ],
+                    ),
                     color: AppTheme.surface,
                     onSelected: (value) {
                       if (value == 'delete') {
@@ -203,9 +212,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         value: 'rename',
                         child: Row(
                           children: [
-                            Icon(Icons.edit, color: Colors.black87),
+                            Icon(
+                              Icons.edit,
+                              size: 20,
+                              color: AppTheme.textPrimary,
+                            ),
                             SizedBox(width: 12),
-                            Text('Rename Playlist'),
+                            Text('Rename', style: AppTheme.body),
                           ],
                         ),
                       ),
@@ -213,12 +226,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         value: 'delete',
                         child: Row(
                           children: [
-                            Icon(Icons.delete, color: Colors.red),
+                            Icon(Icons.delete, size: 20, color: Colors.red),
                             SizedBox(width: 12),
-                            Text(
-                              'Delete Playlist',
-                              style: TextStyle(color: Colors.red),
-                            ),
+                            Text('Delete', style: TextStyle(color: Colors.red)),
                           ],
                         ),
                       ),
@@ -506,7 +516,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        onTap: () => _audioService.playQueue(allSongs, index),
+        onTap: () =>
+            _audioService.playQueue(allSongs, index, userInitiated: true),
         onLongPress: () {
           SongMenuSheet.show(context, song, playlistId: widget.playlist.id);
         },

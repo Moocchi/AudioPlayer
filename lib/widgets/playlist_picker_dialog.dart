@@ -46,6 +46,19 @@ class _PlaylistPickerDialogState extends State<PlaylistPickerDialog> {
     final playlist = await _playlistService.createPlaylist(
       _nameController.text.trim(),
     );
+
+    if (playlist == null) {
+      if (mounted) {
+        Fluttertoast.showToast(
+          msg: 'Batas playlist tercapai (Maksimal 20)',
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+        );
+      }
+      return;
+    }
     await _playlistService.addSongToPlaylist(playlist.id, widget.song.id);
 
     if (mounted) {
