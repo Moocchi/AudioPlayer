@@ -15,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../widgets/gradient_picker_sheet.dart';
 import '../widgets/song_menu_sheet.dart';
 import '../widgets/hires_badge.dart';
+import '../widgets/mini_equalizer.dart';
 
 class PlaylistScreen extends StatefulWidget {
   final Playlist playlist;
@@ -144,7 +145,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: ListenableBuilder(
-        listenable: Listenable.merge([_playlistService, _songService]),
+        listenable: Listenable.merge([
+          _playlistService,
+          _songService,
+          _audioService,
+        ]),
         builder: (context, _) {
           // Get current playlist data
           final playlist = _playlistService.playlists.firstWhere(
@@ -497,7 +502,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     : SliverList(
                         delegate: SliverChildBuilderDelegate((context, index) {
                           final song = songs[index];
-                          return _buildSongItem(song, index, songs);
+                          final isPlaying =
+                              _audioService.currentSong?.id == song.id;
+                          return _buildSongItem(song, index, songs, isPlaying);
                         }, childCount: songs.length),
                       ),
               ),
@@ -511,13 +518,19 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
   }
 
-  Widget _buildSongItem(Song song, int index, List<Song> allSongs) {
+  Widget _buildSongItem(
+    Song song,
+    int index,
+    List<Song> allSongs,
+    bool isPlaying,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () =>
-            _audioService.playQueue(allSongs, index, userInitiated: true),
+            // Play only this song
+            _audioService.playQueue([song], 0, userInitiated: true),
         onLongPress: () {
           SongMenuSheet.show(context, song, playlistId: widget.playlist.id);
         },
@@ -527,42 +540,58 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           child: Row(
             children: [
               // Album Art (48x48 like LikedSongs)
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  color: Colors.grey[800],
-                ),
-                child: song.albumCover != null
-                    ? CachedNetworkImage(
-                        imageUrl: song.albumCover!,
-                        memCacheWidth: 144,
-                        maxWidthDiskCache: 144,
-                        fadeInDuration: Duration.zero,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        imageBuilder: (context, imageProvider) => Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(4),
-                            image: DecorationImage(
-                              image: imageProvider,
-                              fit: BoxFit.cover,
+              Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      color: Colors.grey[800],
+                    ),
+                    child: song.albumCover != null
+                        ? CachedNetworkImage(
+                            imageUrl: song.albumCover!,
+                            memCacheWidth: 144,
+                            maxWidthDiskCache: 144,
+                            fadeInDuration: Duration.zero,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            imageBuilder: (context, imageProvider) => Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                image: DecorationImage(
+                                  image: imageProvider,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            placeholder: (_, __) =>
+                                Container(color: AppTheme.divider),
+                            errorWidget: (_, __, ___) => const SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: Icon(
+                                Icons.music_note,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          )
+                        : const SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Icon(
+                              Icons.music_note,
+                              color: Colors.white54,
                             ),
                           ),
-                        ),
-                        placeholder: (_, __) =>
-                            Container(color: AppTheme.divider),
-                        errorWidget: (_, __, ___) => const SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: Icon(Icons.music_note, color: Colors.white54),
-                        ),
-                      )
-                    : const SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: Icon(Icons.music_note, color: Colors.white54),
-                      ),
+                  ),
+                  if (isPlaying)
+                    const Positioned(
+                      right: 3,
+                      bottom: 3,
+                      child: MiniEqualizer(size: 14, color: Colors.white),
+                    ),
+                ],
               ),
 
               const SizedBox(width: 12),
@@ -580,7 +609,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: AppTheme.body.copyWith(
                         fontWeight: FontWeight.w600,
-                        fontSize: 14, // Match Home Screen
+                        fontSize: 14,
+                        color: isPlaying ? AppTheme.primary : null,
                       ),
                     ),
                     const SizedBox(height: 4),

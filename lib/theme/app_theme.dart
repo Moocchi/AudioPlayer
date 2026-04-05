@@ -36,10 +36,13 @@ class AppTheme {
     color: textPrimary,
   );
 
-  static const TextStyle body = TextStyle(
-    fontSize: 16,
+  static const TextStyle heading3 = TextStyle(
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
     color: textPrimary,
   );
+
+  static const TextStyle body = TextStyle(fontSize: 16, color: textPrimary);
 
   static const TextStyle caption = TextStyle(
     fontSize: 14,

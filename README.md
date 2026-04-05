@@ -8,12 +8,14 @@
 | ✓ | Previous and next button in media player and sync with app |
 | ✓ | Playlist, liked song, Quick choose, and quick Shortcut |
 | ✓ | Better animation |
+| ✓ | Sleep timer |
+| ` | Visual Fix  |
 | | SD card / internal cache saving |
 | | DAC Reader |
 | | Auto-fill queue according to song genre |
 | | Fade out transition song |
 | | Seamless playback |
-| | Sleep timer |
+
 
 **Legend:** ✓ = Done | ` = Ongoing
 

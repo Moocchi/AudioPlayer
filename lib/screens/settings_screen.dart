@@ -63,6 +63,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // Collection Layout Setting
         _buildLayoutToggle(),
 
+        const SizedBox(height: 12),
+
+        // Auto-Hide Overlay Setting (Grid mode only)
+        _buildAutoHideToggle(),
+
         const SizedBox(height: 100), // Space for mini player
       ],
     );
@@ -208,6 +213,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildAutoHideToggle() {
+    final settingsService = SettingsService();
+    final isEnabled = settingsService.gridAutoHideOverlay;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.divider, width: 0.5),
+      ),
+      child: Row(
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            transitionBuilder: (child, animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(scale: animation, child: child),
+              );
+            },
+            child: Icon(
+              isEnabled ? Icons.visibility_off : Icons.visibility,
+              key: ValueKey(isEnabled),
+              size: 22,
+              color: isEnabled ? AppTheme.primary : AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Auto-Hide Grid Overlay', style: AppTheme.body),
+                SizedBox(height: 2),
+                Text('Hide name & menu after 2s idle', style: AppTheme.caption),
+              ],
+            ),
+          ),
+          Switch(
+            value: isEnabled,
+            onChanged: (value) {
+              settingsService.setGridAutoHideOverlay(value);
+            },
+            activeColor: AppTheme.primary,
+          ),
+        ],
       ),
     );
   }

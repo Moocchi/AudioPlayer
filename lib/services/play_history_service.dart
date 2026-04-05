@@ -13,8 +13,10 @@ class PlayHistoryService extends ChangeNotifier {
 
   static const String _historyKey = 'play_history';
   static const String _albumsKey = 'recent_albums';
+  static const String _recentSongsKey = 'recent_songs';
   static const int _maxHistorySongs = 20;
   static const int _maxAlbums = 18; // 9 albums x 2 slides
+  static const int _maxRecentSongs = 10;
 
   // Play count map: songId -> playCount
   Map<String, int> _playCount = {};
@@ -31,15 +33,20 @@ class PlayHistoryService extends ChangeNotifier {
   // Recent albums: albumTitle -> albumCover
   List<Map<String, String>> _recentAlbums = [];
 
+  // Recently played songs (max 10, most recent first)
+  List<Song> _recentSongs = [];
+
   // Return the SESSION snapshot so UI doesn't jump around
   List<Song> get frequentSongs => _sessionFrequentSongs;
   List<Song> get shuffledSongs => _shuffledSongs;
   List<Map<String, String>> get recentAlbums => _recentAlbums;
+  List<Song> get recentSongs => _recentSongs;
 
   /// Initialize service - load from storage
   Future<void> init() async {
     await _loadHistory();
     await _loadAlbums();
+    await _loadRecentSongs();
 
     // Initialize session snapshot once
     _sessionFrequentSongs = List.from(_frequentSongs);
@@ -59,9 +66,13 @@ class PlayHistoryService extends ChangeNotifier {
     // Update recent albums
     _updateRecentAlbums(song);
 
+    // Update recent songs (NOW MANUAL: called explicitly from SearchScreen)
+    // _updateRecentSongs(song);
+
     // Save to storage
     await _saveHistory();
     await _saveAlbums();
+    await _saveRecentSongs();
 
     // Notify listeners so UI updates (e.g. play counts if shown),
     // but frequentSongs getter returns the stable list
@@ -106,10 +117,30 @@ class PlayHistoryService extends ChangeNotifier {
     // Add to front
     _recentAlbums.insert(0, albumData);
 
-    // Trim to max
     if (_recentAlbums.length > _maxAlbums) {
       _recentAlbums = _recentAlbums.sublist(0, _maxAlbums);
     }
+  }
+
+  /// Add a song to recent songs list (manually called)
+  Future<void> addRecentSong(Song song) async {
+    // Remove if already exists
+    _recentSongs.removeWhere((s) => s.id == song.id);
+    // Add to front
+    _recentSongs.insert(0, song);
+    // Trim to max
+    if (_recentSongs.length > _maxRecentSongs) {
+      _recentSongs = _recentSongs.sublist(0, _maxRecentSongs);
+    }
+    await _saveRecentSongs();
+    notifyListeners();
+  }
+
+  /// Remove a song from recent songs list
+  Future<void> removeRecentSong(String songId) async {
+    _recentSongs.removeWhere((s) => s.id == songId);
+    await _saveRecentSongs();
+    notifyListeners();
   }
 
   Future<void> _loadHistory() async {
@@ -230,6 +261,30 @@ class PlayHistoryService extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadRecentSongs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final songsJson = prefs.getString(_recentSongsKey);
+      if (songsJson != null) {
+        final List<dynamic> decoded = json.decode(songsJson);
+        _recentSongs = decoded.map((s) => Song.fromJson(s)).toList();
+      }
+      debugPrint('📂 Loaded ${_recentSongs.length} recent songs');
+    } catch (e) {
+      debugPrint('❌ Error loading recent songs: $e');
+    }
+  }
+
+  Future<void> _saveRecentSongs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final songsJson = _recentSongs.map((s) => s.toJson()).toList();
+      await prefs.setString(_recentSongsKey, json.encode(songsJson));
+    } catch (e) {
+      debugPrint('❌ Error saving recent songs: $e');
+    }
+  }
+
   /// Get play count for a song
   int getPlayCount(String songId) => _playCount[songId] ?? 0;
 
@@ -238,11 +293,13 @@ class PlayHistoryService extends ChangeNotifier {
     _playCount.clear();
     _frequentSongs.clear();
     _recentAlbums.clear();
+    _recentSongs.clear();
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('${_historyKey}_counts');
     await prefs.remove('${_historyKey}_songs');
     await prefs.remove(_albumsKey);
+    await prefs.remove(_recentSongsKey);
 
     notifyListeners();
   }

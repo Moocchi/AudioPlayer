@@ -31,10 +31,12 @@ class _HomeScreenState extends State<HomeScreen> {
       GlobalKey<ExpandablePlayerState>();
   final GlobalKey<NavigatorState> _collectionNavKey =
       GlobalKey<NavigatorState>();
+  final GlobalKey<SearchScreenState> _searchKey =
+      GlobalKey<SearchScreenState>();
 
   late final List<Widget> _screens = [
     const _HomeContent(),
-    const SearchScreen(),
+    SearchScreen(key: _searchKey),
     Navigator(
       key: _collectionNavKey,
       onGenerateRoute: (settings) {
@@ -74,7 +76,13 @@ class _HomeScreenState extends State<HomeScreen> {
         // 1. Check player state (Expanded -> Collapse)
         final playerState = _playerKey.currentState;
         if (playerState != null && playerState.isExpanded) {
-          playerState.collapse();
+          if (playerState.isSheetOpen) {
+            // Close sheet first, keep player expanded
+            playerState.closeSheet();
+          } else {
+            // Collapse player
+            playerState.collapse();
+          }
           return;
         }
 
@@ -86,7 +94,13 @@ class _HomeScreenState extends State<HomeScreen> {
           return;
         }
 
-        // 3. If on other tabs, go back to Home first (optional standard behavior)
+        // 3. Check Search Screen (clear results before going Home)
+        if (_currentIndex == 1) {
+          final handled = _searchKey.currentState?.handleBack() ?? false;
+          if (handled) return;
+        }
+
+        // 4. If on other tabs, go back to Home first
         if (_currentIndex != 0) {
           _pageController.animateToPage(
             0,
@@ -254,7 +268,8 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   void _playSong(Song song, int index, List<Song> songs) {
-    _audio.playQueue(songs, index, userInitiated: true);
+    // Queue only the selected song
+    _audio.playQueue([song], 0, userInitiated: true);
     _history.recordPlay(song);
     // Navigation removed - ExpandablePlayer handles it
   }
@@ -667,7 +682,11 @@ class _HomeContentState extends State<_HomeContent> {
                 // Navigate to search tab
                 final homeState = context
                     .findAncestorStateOfType<_HomeScreenState>();
-                homeState?.setState(() => homeState._currentIndex = 1);
+                homeState?._pageController.animateToPage(
+                  1,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                );
               },
               icon: const Icon(Icons.search),
               label: const Text('Start Searching'),

@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/gradient_picker_sheet.dart';
 import '../widgets/song_menu_sheet.dart';
 import '../widgets/hires_badge.dart';
+import '../widgets/mini_equalizer.dart';
 
 class LikedSongsScreen extends StatefulWidget {
   const LikedSongsScreen({super.key});
@@ -143,7 +144,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: ListenableBuilder(
-        listenable: _likedSongsService,
+        listenable: Listenable.merge([_likedSongsService, _audioService]),
         builder: (context, _) {
           final songs = _likedSongsService.likedSongs;
           final coverPath = _likedSongsService.playlistCoverPath;
@@ -433,7 +434,9 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                     : SliverList(
                         delegate: SliverChildBuilderDelegate((context, index) {
                           final song = songs[index];
-                          return _buildSongItem(song, index, songs);
+                          final isPlaying =
+                              _audioService.currentSong?.id == song.id;
+                          return _buildSongItem(song, index, songs, isPlaying);
                         }, childCount: songs.length),
                       ),
               ),
@@ -447,13 +450,19 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     );
   }
 
-  Widget _buildSongItem(Song song, int index, List<Song> allSongs) {
+  Widget _buildSongItem(
+    Song song,
+    int index,
+    List<Song> allSongs,
+    bool isPlaying,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () =>
-            _audioService.playQueue(allSongs, index, userInitiated: true),
+            // Play only this song
+            _audioService.playQueue([song], 0, userInitiated: true),
         onLongPress: () {
           SongMenuSheet.show(context, song);
         },
@@ -463,42 +472,58 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
           child: Row(
             children: [
               // Album Art (48x48 like playlist)
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  color: Colors.grey[800],
-                ),
-                child: song.albumCover != null
-                    ? CachedNetworkImage(
-                        imageUrl: song.albumCover!,
-                        memCacheWidth: 144,
-                        maxWidthDiskCache: 144,
-                        fadeInDuration: Duration.zero,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        imageBuilder: (context, imageProvider) => Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(4),
-                            image: DecorationImage(
-                              image: imageProvider,
-                              fit: BoxFit.cover,
+              Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      color: Colors.grey[800],
+                    ),
+                    child: song.albumCover != null
+                        ? CachedNetworkImage(
+                            imageUrl: song.albumCover!,
+                            memCacheWidth: 144,
+                            maxWidthDiskCache: 144,
+                            fadeInDuration: Duration.zero,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            imageBuilder: (context, imageProvider) => Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                image: DecorationImage(
+                                  image: imageProvider,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            placeholder: (_, __) =>
+                                Container(color: AppTheme.divider),
+                            errorWidget: (_, __, ___) => const SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: Icon(
+                                Icons.music_note,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          )
+                        : const SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Icon(
+                              Icons.music_note,
+                              color: Colors.white54,
                             ),
                           ),
-                        ),
-                        placeholder: (_, __) =>
-                            Container(color: AppTheme.divider),
-                        errorWidget: (_, __, ___) => const SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: Icon(Icons.music_note, color: Colors.white54),
-                        ),
-                      )
-                    : const SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: Icon(Icons.music_note, color: Colors.white54),
-                      ),
+                  ),
+                  if (isPlaying)
+                    const Positioned(
+                      right: 3,
+                      bottom: 3,
+                      child: MiniEqualizer(size: 14, color: Colors.white),
+                    ),
+                ],
               ),
 
               const SizedBox(width: 12),
@@ -516,7 +541,8 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: AppTheme.body.copyWith(
                         fontWeight: FontWeight.w600,
-                        fontSize: 14, // Match Home Screen
+                        fontSize: 14,
+                        color: isPlaying ? AppTheme.primary : null,
                       ),
                     ),
                     const SizedBox(height: 4),

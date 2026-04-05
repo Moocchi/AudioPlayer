@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_reorderable_grid_view/widgets/reorderable_builder.dart';
@@ -23,9 +24,25 @@ class _CollectionScreenState extends State<CollectionScreen> {
   final _gridViewKey = GlobalKey();
   final _listViewKey = GlobalKey();
 
+  // Auto-hide overlay
+  bool _showGridOverlay = true;
+  Timer? _overlayTimer;
+
+  void _resetOverlayTimer() {
+    if (!SettingsService().gridAutoHideOverlay) return;
+    _overlayTimer?.cancel();
+    if (!_showGridOverlay) {
+      setState(() => _showGridOverlay = true);
+    }
+    _overlayTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _showGridOverlay = false);
+    });
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
+    _overlayTimer?.cancel();
     super.dispose();
   }
 
@@ -188,13 +205,29 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
         if (isGridMode) {
           if (_isRearrangeMode) {
+            _overlayTimer?.cancel();
             return _buildRearrangeGrid(playlistService, playlists);
           }
-          return _buildStandardGrid(
-            itemCount,
-            likedSongsService,
-            playlistService,
-            playlists,
+          // Start auto-hide timer if setting is enabled
+          if (settingsService.gridAutoHideOverlay && _overlayTimer == null) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _resetOverlayTimer(),
+            );
+          } else if (!settingsService.gridAutoHideOverlay) {
+            _overlayTimer?.cancel();
+            _overlayTimer = null;
+            if (!_showGridOverlay) _showGridOverlay = true;
+          }
+          return Listener(
+            onPointerDown: (_) => _resetOverlayTimer(),
+            onPointerMove: (_) => _resetOverlayTimer(),
+            behavior: HitTestBehavior.translucent,
+            child: _buildStandardGrid(
+              itemCount,
+              likedSongsService,
+              playlistService,
+              playlists,
+            ),
           );
         } else {
           if (_isRearrangeMode) {
@@ -260,13 +293,15 @@ class _CollectionScreenState extends State<CollectionScreen> {
             automaticScrollExtent: 100.0,
             scrollController: _scrollController,
             onReorder: (reorderedListFunction) {
-              final reorderedWidgets = reorderedListFunction(children);
+              setState(() {
+                final reorderedWidgets = reorderedListFunction(children);
 
-              final orderedIds = reorderedWidgets
-                  .map((widget) => (widget.key as ValueKey<String>).value)
-                  .toList();
+                final orderedIds = reorderedWidgets
+                    .map((widget) => (widget.key as ValueKey<String>).value)
+                    .toList();
 
-              playlistService.reorderPlaylistsByOrderedIds(orderedIds);
+                playlistService.reorderPlaylistsByOrderedIds(orderedIds);
+              });
             },
             children: children,
             builder: (children) {
@@ -314,12 +349,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
             gradientColors: [Colors.purple.shade800, Colors.blue.shade800],
             imagePath: likedSongsService.playlistCoverPath,
             onTap: () {
+              _overlayTimer?.cancel(); // Keep visible while away
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => const LikedSongsScreen(),
                 ),
-              );
+              ).then((_) => _resetOverlayTimer()); // Restart on return
             },
           );
         }
@@ -332,14 +368,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
         return GestureDetector(
           onLongPress: () {
-            // Show menu or enter rearrange mode hint?
-            // For now, just show menu as before or do nothing.
-            // Original code didn't have specific long press for standard grid items other than drag.
-            // But standard list items had menus.
-            // We should ensure the context menu still works if it was there.
-            // Checking the file, there was `_showPlaylistMenu`?
-            // The previous code for Grid didn't show menu on long press, only on tap of menu button?
-            // Wait, I need to check if there is a menu button in grid item.
+            // ...
           },
           child: _buildGridItem(
             title: playlist.name,
@@ -348,12 +377,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
             gradientColors: gradientColors,
             imagePath: playlist.coverPath,
             onTap: () {
+              _overlayTimer?.cancel();
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => PlaylistScreen(playlist: playlist),
                 ),
-              );
+              ).then((_) => _resetOverlayTimer());
             },
             onMenuSelected: (value) {
               if (value == 'rename') _showRenameDialog(playlist);
@@ -420,13 +450,15 @@ class _CollectionScreenState extends State<CollectionScreen> {
             automaticScrollExtent: 100.0,
             scrollController: _scrollController,
             onReorder: (reorderedListFunction) {
-              final reorderedWidgets = reorderedListFunction(children);
+              setState(() {
+                final reorderedWidgets = reorderedListFunction(children);
 
-              final orderedIds = reorderedWidgets
-                  .map((widget) => (widget.key as ValueKey<String>).value)
-                  .toList();
+                final orderedIds = reorderedWidgets
+                    .map((widget) => (widget.key as ValueKey<String>).value)
+                    .toList();
 
-              playlistService.reorderPlaylistsByOrderedIds(orderedIds);
+                playlistService.reorderPlaylistsByOrderedIds(orderedIds);
+              });
             },
             children: children,
             builder: (children) {
@@ -478,12 +510,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
             gradientColors: [Colors.purple.shade800, Colors.blue.shade800],
             imagePath: likedSongsService.playlistCoverPath,
             onTap: () {
+              _overlayTimer?.cancel();
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => const LikedSongsScreen(),
                 ),
-              );
+              ).then((_) => _resetOverlayTimer());
             },
           );
         }
@@ -501,12 +534,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
           gradientColors: gradientColors,
           imagePath: playlist.coverPath,
           onTap: () {
+            _overlayTimer?.cancel();
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => PlaylistScreen(playlist: playlist),
               ),
-            );
+            ).then((_) => _resetOverlayTimer());
           },
           onMenuSelected: (value) {
             if (value == 'rename') _showRenameDialog(playlist);
@@ -567,17 +601,21 @@ class _CollectionScreenState extends State<CollectionScreen> {
             ),
 
             // Gradient Overlay for text readability
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.0),
-                    Colors.black.withOpacity(0.6),
-                  ],
-                  stops: const [0.5, 0.7, 1.0],
+            AnimatedOpacity(
+              opacity: _showGridOverlay ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 500),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.0),
+                      Colors.black.withOpacity(0.6),
+                    ],
+                    stops: const [0.5, 0.7, 1.0],
+                  ),
                 ),
               ),
             ),
@@ -587,57 +625,61 @@ class _CollectionScreenState extends State<CollectionScreen> {
               left: 12,
               right: 12,
               bottom: 12,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          offset: const Offset(-0.5, -0.5),
-                          color: Colors.black,
-                        ),
-                        Shadow(
-                          offset: const Offset(0.5, -0.5),
-                          color: Colors.black,
-                        ),
-                        Shadow(
-                          offset: const Offset(0.5, 0.5),
-                          color: Colors.black,
-                        ),
-                        Shadow(
-                          offset: const Offset(-0.5, 0.5),
-                          color: Colors.black,
-                        ),
-                      ],
+              child: AnimatedOpacity(
+                opacity: _showGridOverlay ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 500),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: const Offset(-0.5, -0.5),
+                            color: Colors.black,
+                          ),
+                          Shadow(
+                            offset: const Offset(0.5, -0.5),
+                            color: Colors.black,
+                          ),
+                          Shadow(
+                            offset: const Offset(0.5, 0.5),
+                            color: Colors.black,
+                          ),
+                          Shadow(
+                            offset: const Offset(-0.5, 0.5),
+                            color: Colors.black,
+                          ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(0, 1),
-                          blurRadius: 2,
-                          color: Colors.black,
-                        ),
-                      ],
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(0, 1),
+                            blurRadius: 2,
+                            color: Colors.black,
+                          ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
 
@@ -646,46 +688,62 @@ class _CollectionScreenState extends State<CollectionScreen> {
               Positioned(
                 top: 0,
                 right: 0,
-                child: Material(
-                  color: Colors.transparent,
-                  child: PopupMenuButton<String>(
-                    onSelected: onMenuSelected,
-                    icon: const Icon(
-                      Icons.more_vert,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(offset: Offset(-0.5, -0.5), color: Colors.black),
-                        Shadow(offset: Offset(0.5, -0.5), color: Colors.black),
-                        Shadow(offset: Offset(0.5, 0.5), color: Colors.black),
-                        Shadow(offset: Offset(-0.5, 0.5), color: Colors.black),
+                child: AnimatedOpacity(
+                  opacity: _showGridOverlay ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 500),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: PopupMenuButton<String>(
+                      onSelected: onMenuSelected,
+                      icon: const Icon(
+                        Icons.more_vert,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(-0.5, -0.5),
+                            color: Colors.black,
+                          ),
+                          Shadow(
+                            offset: Offset(0.5, -0.5),
+                            color: Colors.black,
+                          ),
+                          Shadow(offset: Offset(0.5, 0.5), color: Colors.black),
+                          Shadow(
+                            offset: Offset(-0.5, 0.5),
+                            color: Colors.black,
+                          ),
+                        ],
+                      ),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'rename',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.edit,
+                                size: 20,
+                                color: AppTheme.textPrimary,
+                              ),
+                              SizedBox(width: 12),
+                              Text('Rename', style: AppTheme.body),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete, size: 20, color: Colors.red),
+                              SizedBox(width: 12),
+                              Text(
+                                'Delete',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'rename',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.edit,
-                              size: 20,
-                              color: AppTheme.textPrimary,
-                            ),
-                            SizedBox(width: 12),
-                            Text('Rename', style: AppTheme.body),
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete, size: 20, color: Colors.red),
-                            SizedBox(width: 12),
-                            Text('Delete', style: TextStyle(color: Colors.red)),
-                          ],
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ),

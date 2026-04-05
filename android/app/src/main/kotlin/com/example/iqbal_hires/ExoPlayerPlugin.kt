@@ -172,6 +172,11 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, Playb
                 
                 result.success(stateMap)
             }
+            "setVolume" -> {
+                val volume = call.argument<Double>("volume")?.toFloat() ?: 1.0f
+                exoPlayer?.volume = volume
+                result.success(null)
+            }
             else -> {
                 result.notImplemented()
             }

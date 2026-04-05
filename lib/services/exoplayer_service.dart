@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
+
 import '../models/song.dart';
 import 'play_history_service.dart';
 import '../models/loop_mode.dart'; // Import LoopMode
@@ -167,6 +167,11 @@ class ExoPlayerService extends ChangeNotifier {
   // DASH manifest info
   Map<String, dynamic>? _manifestInfo;
 
+  // Sleep Timer
+  Timer? _sleepTimer;
+  Duration? _sleepTimerDuration;
+  bool _stopAfterCurrentSong = false;
+
   // Getters
   Song? get currentSong => _currentSong;
   List<Song> get queue => _queue;
@@ -187,6 +192,8 @@ class ExoPlayerService extends ChangeNotifier {
   }
 
   Map<String, dynamic>? get manifestInfo => _manifestInfo;
+  Duration? get sleepTimerDuration => _sleepTimerDuration;
+  bool get stopAfterCurrentSong => _stopAfterCurrentSong;
 
   /// Fetch actual file size from streaming URL and update song
   Future<void> _fetchAndUpdateFileSize(String streamUrl, Song song) async {
@@ -475,6 +482,16 @@ class ExoPlayerService extends ChangeNotifier {
 
     // Wait for animation to complete (500ms)
     await Future.delayed(const Duration(milliseconds: 500));
+
+    // Check if Sleep Timer "End of Song" is active
+    if (_stopAfterCurrentSong) {
+      debugPrint('🛑 Sleep Timer: Stopping after current song.');
+      _stopAfterCurrentSong = false;
+      _sleepTimerDuration = null;
+      _isPlaying = false;
+      notifyListeners();
+      return; // Stop playback here
+    }
 
     // Check if there's a next song in queue
     if (_queue.isNotEmpty && _currentIndex < _queue.length - 1) {
@@ -987,9 +1004,31 @@ class ExoPlayerService extends ChangeNotifier {
     }
   }
 
-  void clearQueue() {
+  Future<void> clearQueue() async {
+    debugPrint('🗑️ Clear Queue: Triggering collapse animation');
+    shouldExpandPlayer.value = -1; // Trigger collapse animation immediately
+
+    // Pause audio first (stops sound, keeps metadata visible)
+    try {
+      if (_isPlaying) {
+        await pause();
+      }
+    } catch (e) {
+      debugPrint('Error pausing: $e');
+    }
+
+    // Wait for animation to finish (ExpandablePlayer duration is 300ms)
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    debugPrint('🗑️ Clear Queue: Clearing data');
+    await stop(); // Stops playback fully and clears current song
     _queue.clear();
     _currentIndex = -1;
+    _currentSong = null;
+    _isPlaying = false;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    _isLoading = false;
     notifyListeners();
   }
 
@@ -1026,7 +1065,11 @@ class ExoPlayerService extends ChangeNotifier {
 
     // Trigger player expand IMMEDIATELY if user initiated (don't wait for loading)
     if (userInitiated) {
-      shouldExpandPlayer.value++;
+      if (shouldExpandPlayer.value <= 0) {
+        shouldExpandPlayer.value = 1; // Start fresh positive
+      } else {
+        shouldExpandPlayer.value++; // Increment
+      }
     }
 
     _queue = List.from(songs);
@@ -1145,12 +1188,102 @@ class ExoPlayerService extends ChangeNotifier {
     }
   }
 
+  // Sleep Timer Methods
+  void setSleepTimer(double sliderValue) {
+    cancelSleepTimer(); // Clear existing
+
+    if (sliderValue <= 0) {
+      debugPrint('⏰ Sleep Timer: Cancelled');
+      notifyListeners();
+      return;
+    }
+
+    if (sliderValue >= 13) {
+      // End of Song Mode
+      _stopAfterCurrentSong = true;
+      debugPrint('⏰ Sleep Timer: Set to End of Song');
+    } else {
+      // Countdown Mode
+      int minutes = (sliderValue * 5).toInt();
+      if (sliderValue == 0.33) {
+        // Debug: 20 seconds
+        _sleepTimerDuration = const Duration(seconds: 20);
+        debugPrint('⏰ Sleep Timer: Set to 20 seconds (Debug)');
+      } else {
+        _sleepTimerDuration = Duration(minutes: minutes);
+        debugPrint('⏰ Sleep Timer: Set to $minutes minutes');
+      }
+
+      _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+        if (_sleepTimerDuration == null) {
+          timer.cancel();
+          return;
+        }
+
+        final newDuration = _sleepTimerDuration! - const Duration(seconds: 1);
+        if (newDuration.inSeconds <= 0) {
+          // Time's up!
+          debugPrint('⏰ Sleep Timer: Time is up!');
+          _sleepTimerDuration = Duration.zero; // Ensure zero for UI
+          setVolume(0.0); // Ensure silence
+          if (_isPlaying) {
+            await pause(); // Pause playback
+          }
+          cancelSleepTimer(); // Reset state and volume to 1.0
+        } else {
+          _sleepTimerDuration = newDuration;
+        }
+
+        // Fade out logic (Last 10 seconds)
+        if (_sleepTimerDuration != null &&
+            _sleepTimerDuration!.inSeconds <= 10) {
+          final secondsLeft = _sleepTimerDuration!.inSeconds;
+          final volume = (secondsLeft / 10.0).clamp(0.0, 1.0);
+          setVolume(volume);
+        }
+
+        notifyListeners();
+      });
+    }
+    setVolume(1.0); // Reset volume when setting timer
+    notifyListeners();
+  }
+
+  void addSleepTimerDuration(Duration d) {
+    if (_sleepTimerDuration != null) {
+      _sleepTimerDuration = _sleepTimerDuration! + d;
+      notifyListeners();
+    } else {
+      // If not running, maybe start it?
+      // User said "kalau timer lagi jalan".
+      // So assume only when running.
+    }
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTimerDuration = null;
+    _stopAfterCurrentSong = false;
+    setVolume(1.0); // Reset volume
+    notifyListeners();
+  }
+
+  Future<void> setVolume(double volume) async {
+    try {
+      await _channel.invokeMethod('setVolume', {'volume': volume});
+    } catch (e) {
+      debugPrint('❌ Error setting volume: $e');
+    }
+  }
+
   @override
   void dispose() {
     _eventSubscription?.cancel();
     _periodicUpdateTimer?.cancel();
     _positionTimer?.cancel();
     _positionController?.close();
+    _sleepTimer?.cancel();
     stop();
     super.dispose();
   }

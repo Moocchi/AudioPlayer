@@ -10,20 +10,31 @@ import 'hires_badge.dart';
 class SongMenuSheet extends StatelessWidget {
   final Song song;
   final String? playlistId;
+  final VoidCallback? onRemoveFromHistory;
 
-  const SongMenuSheet({super.key, required this.song, this.playlistId});
+  const SongMenuSheet({
+    super.key,
+    required this.song,
+    this.playlistId,
+    this.onRemoveFromHistory,
+  });
 
   static Future<void> show(
     BuildContext context,
     Song song, {
     String? playlistId,
+    VoidCallback? onRemoveFromHistory,
   }) {
     return showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true, // Fix: Show on top of everything
-      builder: (context) => SongMenuSheet(song: song, playlistId: playlistId),
+      builder: (context) => SongMenuSheet(
+        song: song,
+        playlistId: playlistId,
+        onRemoveFromHistory: onRemoveFromHistory,
+      ),
     );
   }
 
@@ -175,6 +186,21 @@ class SongMenuSheet extends StatelessWidget {
                   backgroundColor: Colors.black54,
                   textColor: Colors.white,
                 );
+              },
+            ),
+          ],
+
+          // 5. Remove from History (Conditional)
+          if (onRemoveFromHistory != null) ...[
+            const Divider(color: AppTheme.divider, height: 24),
+            _buildMenuItem(
+              context,
+              icon: Icons.delete_outline,
+              title: 'Hapus dari histori',
+              color: Colors.red,
+              onTap: () {
+                Navigator.pop(context);
+                onRemoveFromHistory!();
               },
             ),
           ],

@@ -7,7 +7,7 @@ class Song {
   final int duration;
   final bool isHiRes;
   final List<String> mediaTags;
-  
+
   // File size in bytes (fetched from API/streaming URL)
   int? fileSize;
 
@@ -21,11 +21,16 @@ class Song {
     this.isHiRes = false,
     this.mediaTags = const [],
     this.fileSize,
+    this.filePath,
+    this.url = '',
   });
+
+  final String? filePath;
+  final String url;
 
   // Check if song is Lossless (but not Hi-Res)
   bool get isLossless => !isHiRes && mediaTags.contains("LOSSLESS");
-  
+
   // Get file size in MB formatted string
   String? get fileSizeMB {
     if (fileSize == null) return null;
@@ -38,7 +43,7 @@ class Song {
       return '${mb.toStringAsFixed(2)} MB';
     }
   }
-  
+
   // Estimate file size if not fetched yet
   String get estimatedFileSizeMB {
     // More accurate estimation:
@@ -47,7 +52,7 @@ class Song {
     double mbPerMinute = isHiRes ? 12.0 : 5.5;
     double minutes = duration / 60.0;
     double sizeMB = mbPerMinute * minutes;
-    
+
     if (sizeMB >= 100) {
       return '${sizeMB.toStringAsFixed(0)} MB';
     } else if (sizeMB >= 10) {
@@ -61,19 +66,22 @@ class Song {
     // Check if this is from API or from local storage
     if (json.containsKey('mediaMetadata') || json.containsKey('album')) {
       // From API
-      List mediaTags = json['mediaMetadata']?['tags'] is List 
-          ? json['mediaMetadata']['tags'] 
+      List mediaTags = json['mediaMetadata']?['tags'] is List
+          ? json['mediaMetadata']['tags']
           : [];
-      
+
       String? coverUrl;
       if (json['album']?['cover'] != null) {
-        coverUrl = 'https://resources.tidal.com/images/${json['album']['cover'].toString().replaceAll('-', '/')}/640x640.jpg';
+        coverUrl =
+            'https://resources.tidal.com/images/${json['album']['cover'].toString().replaceAll('-', '/')}/640x640.jpg';
       }
 
       return Song(
         id: json['id'].toString(),
         title: json['title'] ?? 'Unknown',
-        artist: (json['artists'] as List?)?.map((a) => a['name']).join(', ') ?? 'Unknown Artist',
+        artist:
+            (json['artists'] as List?)?.map((a) => a['name']).join(', ') ??
+            'Unknown Artist',
         albumTitle: json['album']?['title'] ?? 'Unknown Album',
         albumCover: coverUrl,
         duration: json['duration'] ?? 0,
