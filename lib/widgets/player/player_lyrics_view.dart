@@ -5,7 +5,7 @@ import '../../services/lyrics_service.dart';
 import '../../theme/app_theme.dart';
 
 class PlayerLyricsView extends StatefulWidget {
-  const PlayerLyricsView({Key? key}) : super(key: key);
+  const PlayerLyricsView({super.key});
 
   @override
   State<PlayerLyricsView> createState() => _PlayerLyricsViewState();
@@ -199,11 +199,11 @@ class _PlayerLyricsViewState extends State<PlayerLyricsView> {
       onNotification: _handleScrollNotification,
       child: ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
         itemCount: lines.length + 2, // +2 for top and bottom spacers
         itemBuilder: (context, index) {
           // Top spacer
-          if (index == 0) return const SizedBox(height: 80);
+          if (index == 0) return const SizedBox(height: 24);
           // Bottom spacer
           if (index == lines.length + 1) return const SizedBox(height: 200);
 
@@ -250,7 +250,7 @@ class _PlayerLyricsViewState extends State<PlayerLyricsView> {
 
   Widget _buildPlainLyrics(String lyrics) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
       child: Text(
         lyrics,
         style: TextStyle(

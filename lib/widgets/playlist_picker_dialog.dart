@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
 import '../services/playlist_service.dart';
+import '../services/song_service.dart';
 import '../theme/app_theme.dart';
 
 class PlaylistPickerDialog extends StatefulWidget {
@@ -23,6 +26,7 @@ class PlaylistPickerDialog extends StatefulWidget {
 
 class _PlaylistPickerDialogState extends State<PlaylistPickerDialog> {
   final _playlistService = PlaylistService();
+  final _songService = SongService();
   final _nameController = TextEditingController();
 
   @override
@@ -140,8 +144,53 @@ class _PlaylistPickerDialogState extends State<PlaylistPickerDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: AppTheme.surface,
-      title: const Text('Simpan ke playlist', style: AppTheme.heading2),
-      contentPadding: const EdgeInsets.symmetric(vertical: 16),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      titlePadding: const EdgeInsets.fromLTRB(18, 18, 18, 6),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Simpan ke playlist', style: AppTheme.heading2),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FA),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.divider),
+            ),
+            child: Row(
+              children: [
+                _buildSongCover(),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTheme.body.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.song.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTheme.caption,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
       content: ListenableBuilder(
         listenable: _playlistService,
         builder: (context, _) {
@@ -149,72 +198,235 @@ class _PlaylistPickerDialogState extends State<PlaylistPickerDialog> {
 
           if (playlists.isEmpty) {
             return Padding(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 30),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.playlist_play,
-                    size: 48,
-                    color: AppTheme.textSecondary,
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: const Color(0x14FF6B35),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Icon(
+                      Icons.playlist_play,
+                      size: 38,
+                      color: AppTheme.primary,
+                    ),
                   ),
                   const SizedBox(height: 16),
-                  Text('Belum ada playlist', style: AppTheme.caption),
+                  Text(
+                    'Belum ada playlist',
+                    style: AppTheme.body.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('Buat playlist baru untuk simpan lagu ini', style: AppTheme.caption),
                 ],
               ),
             );
           }
 
-          return SizedBox(
-            width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: playlists.length,
-              itemBuilder: (context, index) {
-                final playlist = playlists[index];
-                final isAdded = _playlistService.isSongInPlaylist(
-                  playlist.id,
-                  widget.song.id,
-                );
+          return ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 300),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: playlists.length,
+                itemBuilder: (context, index) {
+                  final playlist = playlists[index];
+                  final isAdded = _playlistService.isSongInPlaylist(
+                    playlist.id,
+                    widget.song.id,
+                  );
 
-                return ListTile(
-                  leading: const Icon(
-                    Icons.playlist_play,
-                    color: AppTheme.primary,
-                  ),
-                  title: Text(playlist.name, style: AppTheme.body),
-                  subtitle: Text(
-                    '${playlist.songIds.length} lagu',
-                    style: AppTheme.caption,
-                  ),
-                  trailing: isAdded
-                      ? const Icon(Icons.check, color: AppTheme.primary)
-                      : null,
-                  onTap: isAdded ? null : () => _addToPlaylist(playlist),
-                );
-              },
+                  return _buildPlaylistTile(playlist, isAdded);
+                },
+              ),
             ),
           );
         },
       ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text(
-            'Tutup',
-            style: TextStyle(color: AppTheme.textSecondary),
-          ),
-        ),
-        ElevatedButton.icon(
-          onPressed: _showCreatePlaylistDialog,
-          icon: const Icon(Icons.add, size: 20),
-          label: const Text('Playlist baru'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.white,
+        SizedBox(
+          width: double.infinity,
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textSecondary,
+                    side: const BorderSide(color: AppTheme.divider),
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text('Tutup'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _showCreatePlaylistDialog,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Playlist baru'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSongCover() {
+    final coverUrl = widget.song.albumCover;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 46,
+        height: 46,
+        child: (coverUrl != null && coverUrl.isNotEmpty)
+            ? Image.network(
+                coverUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _fallbackAlbumCover(),
+              )
+            : _fallbackAlbumCover(),
+      ),
+    );
+  }
+
+  Widget _buildPlaylistTile(Playlist playlist, bool isAdded) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: isAdded ? null : () => _addToPlaylist(playlist),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: isAdded ? const Color(0x14FF6B35) : const Color(0xFFF8F9FA),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isAdded ? const Color(0x66FF6B35) : AppTheme.divider,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                children: [
+                  _buildPlaylistCover(playlist),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          playlist.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTheme.body.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isAdded
+                              ? '${playlist.songIds.length} lagu · Sudah ada'
+                              : '${playlist.songIds.length} lagu',
+                          style: AppTheme.caption,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  isAdded
+                      ? const Icon(
+                          Icons.check_circle,
+                          color: AppTheme.primary,
+                          size: 22,
+                        )
+                      : const Icon(
+                          Icons.add_circle_outline,
+                          color: AppTheme.textSecondary,
+                          size: 20,
+                        ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaylistCover(Playlist playlist) {
+    Widget fallback() => _fallbackAlbumCover(iconSize: 20);
+
+    if (playlist.coverPath != null && playlist.coverPath!.isNotEmpty) {
+      final coverFile = File(playlist.coverPath!);
+      if (coverFile.existsSync()) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Image.file(
+              coverFile,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback(),
+            ),
+          ),
+        );
+      }
+    }
+
+    if (playlist.songIds.isNotEmpty) {
+      final song = _songService.getSongById(playlist.songIds.first);
+      final coverUrl = song?.albumCover;
+
+      if (coverUrl != null && coverUrl.isNotEmpty) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Image.network(
+              coverUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback(),
+            ),
+          ),
+        );
+      }
+    }
+
+    return fallback();
+  }
+
+  Widget _fallbackAlbumCover({double iconSize = 22}) {
+    return Container(
+      color: const Color(0xFFF2F4F7),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.music_note_rounded,
+        size: iconSize,
+        color: AppTheme.textSecondary,
+      ),
     );
   }
 }

@@ -567,6 +567,15 @@ class _HomeContentState extends State<_HomeContent> {
   Widget _buildQuickShortcuts() {
     final songs = _history.shuffledSongs;
     final totalPages = (songs.length / 9).ceil().clamp(1, 2);
+    const gridColumns = 3;
+    const gridSpacing = 4.0;
+    const gridHorizontalPadding = 16.0;
+    final availableWidth =
+      MediaQuery.of(context).size.width - (gridHorizontalPadding * 2);
+    final tileWidth =
+      (availableWidth - (gridSpacing * (gridColumns - 1))) / gridColumns;
+    final gridHeight =
+      (tileWidth * gridColumns) + (gridSpacing * (gridColumns - 1));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -581,7 +590,7 @@ class _HomeContentState extends State<_HomeContent> {
         ),
         // Song grid pages
         SizedBox(
-          height: 350,
+          height: gridHeight,
           child: PageView.builder(
             controller: _albumPageController,
             itemCount: totalPages,

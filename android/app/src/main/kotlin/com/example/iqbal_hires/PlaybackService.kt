@@ -8,12 +8,14 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import com.squareup.picasso.Picasso
 import kotlinx.coroutines.CoroutineScope
@@ -181,6 +183,10 @@ class PlaybackService : Service() {
         currentArtUrl = artUrl
         
         android.util.Log.d("PlaybackService", "🔔 updateMetadata: $title - $artist")
+
+        // Keep MediaSession metadata in sync so quick settings media card
+        // (including HyperOS control center) can show current song info.
+        syncNowPlayingMetadata()
         
         // Load album art and show notification
         CoroutineScope(Dispatchers.IO).launch {
@@ -197,6 +203,54 @@ class PlaybackService : Service() {
                 currentAlbumArt = albumArt
                 showNotification(albumArt)
             }
+        }
+    }
+
+    private fun syncNowPlayingMetadata() {
+        val exoPlayer = player as? ExoPlayer ?: return
+
+        try {
+            val metadataBuilder = MediaMetadata.Builder()
+            if (currentTitle.isNotEmpty()) {
+                metadataBuilder.setTitle(currentTitle)
+            }
+            if (currentArtist.isNotEmpty()) {
+                metadataBuilder.setArtist(currentArtist)
+            }
+            if (currentArtUrl.isNotEmpty()) {
+                metadataBuilder.setArtworkUri(Uri.parse(currentArtUrl))
+            }
+
+            val metadata = metadataBuilder.build()
+            val currentIndex = exoPlayer.currentMediaItemIndex
+            val currentItem = exoPlayer.currentMediaItem
+
+            if (currentItem != null && currentIndex != -1) {
+                val currentPosition = exoPlayer.currentPosition
+                val playWhenReady = exoPlayer.playWhenReady
+
+                val updatedItem = currentItem
+                    .buildUpon()
+                    .setMediaMetadata(metadata)
+                    .build()
+
+                exoPlayer.replaceMediaItem(currentIndex, updatedItem)
+
+                if (currentPosition > 0) {
+                    exoPlayer.seekTo(currentIndex, currentPosition)
+                }
+                exoPlayer.playWhenReady = playWhenReady
+
+                android.util.Log.d(
+                    "PlaybackService",
+                    "✅ MediaItem metadata synced for quick settings: $currentTitle - $currentArtist"
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "PlaybackService",
+                "❌ Failed to sync MediaSession metadata: ${e.message}"
+            )
         }
     }
     

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -8,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../models/song.dart';
 import 'play_history_service.dart';
 import '../models/loop_mode.dart'; // Import LoopMode
+import 'lyrics_service.dart';
 
 /// Local HTTP server for serving DASH manifests
 class LocalManifestServer {
@@ -109,16 +111,22 @@ class ExoPlayerService extends ChangeNotifier {
   bool _isShuffleMode = false;
   LoopMode _loopMode = LoopMode.off;
 
+  // Shuffle state tracking (no-repeat cycle)
+  final Random _random = Random();
+  final List<int> _shuffleHistory = <int>[];
+  final Set<int> _shufflePlayed = <int>{};
+
   bool get isShuffleMode => _isShuffleMode;
   LoopMode get loopMode => _loopMode;
 
   void toggleShuffle() {
     _isShuffleMode = !_isShuffleMode;
     if (_isShuffleMode) {
-      // Logic to shuffle queue would go here
-      // For now just UI toggle
+      _resetShuffleState(keepCurrent: true);
+      debugPrint('🔀 Shuffle enabled');
     } else {
-      // Logic to restore queue
+      _resetShuffleState(keepCurrent: false);
+      debugPrint('🔀 Shuffle disabled');
     }
     notifyListeners();
   }
@@ -136,6 +144,106 @@ class ExoPlayerService extends ChangeNotifier {
         break;
     }
     notifyListeners();
+  }
+
+  void _resetShuffleState({required bool keepCurrent}) {
+    _shuffleHistory.clear();
+    _shufflePlayed.clear();
+
+    if (!keepCurrent) return;
+
+    final current = _resolveCurrentIndex();
+    if (current != -1) {
+      _shuffleHistory.add(current);
+      _shufflePlayed.add(current);
+    }
+  }
+
+  void _onQueueStructureChanged() {
+    if (_isShuffleMode) {
+      _resetShuffleState(keepCurrent: true);
+    }
+  }
+
+  int _resolveCurrentIndex() {
+    if (_currentIndex >= 0 && _currentIndex < _queue.length) {
+      return _currentIndex;
+    }
+
+    if (_currentSong != null) {
+      final resolvedIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);
+      if (resolvedIndex != -1) {
+        _currentIndex = resolvedIndex;
+        return resolvedIndex;
+      }
+    }
+
+    return -1;
+  }
+
+  void _recordShuffleVisit(int index) {
+    if (!_isShuffleMode) return;
+    if (index < 0 || index >= _queue.length) return;
+
+    _shufflePlayed.add(index);
+    if (_shuffleHistory.isEmpty || _shuffleHistory.last != index) {
+      _shuffleHistory.add(index);
+    }
+  }
+
+  int? _nextIndexSequential() {
+    if (_queue.isEmpty) return null;
+
+    final current = _resolveCurrentIndex();
+    if (current == -1) return 0;
+
+    if (current < _queue.length - 1) {
+      return current + 1;
+    }
+
+    if (_loopMode == LoopMode.all) {
+      return 0;
+    }
+
+    return null;
+  }
+
+  int? _nextIndexShuffle() {
+    if (_queue.isEmpty) return null;
+
+    final current = _resolveCurrentIndex();
+    if (current != -1) {
+      _recordShuffleVisit(current);
+    }
+
+    if (_queue.length == 1) {
+      return _loopMode == LoopMode.all ? 0 : null;
+    }
+
+    List<int> unplayed = List<int>.generate(_queue.length, (i) => i)
+        .where((i) => !_shufflePlayed.contains(i) && i != current)
+        .toList();
+
+    if (unplayed.isEmpty) {
+      if (_loopMode != LoopMode.all) {
+        return null;
+      }
+
+      // Start a new cycle but avoid immediate repeat of current song.
+      _shufflePlayed.clear();
+      if (current != -1) {
+        _shufflePlayed.add(current);
+      }
+
+      unplayed = List<int>.generate(_queue.length, (i) => i)
+          .where((i) => !_shufflePlayed.contains(i) && i != current)
+          .toList();
+    }
+
+    if (unplayed.isEmpty) return null;
+
+    final next = unplayed[_random.nextInt(unplayed.length)];
+    return next;
   }
 
   // Player state
@@ -171,6 +279,11 @@ class ExoPlayerService extends ChangeNotifier {
   Timer? _sleepTimer;
   Duration? _sleepTimerDuration;
   bool _stopAfterCurrentSong = false;
+
+  // Lyrics prefetch state
+  final LyricsService _lyricsService = LyricsService();
+  final Set<String> _lyricsPrefetchInProgress = <String>{};
+  String? _lastPrefetchedLyricsSongId;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -211,6 +324,29 @@ class ExoPlayerService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error fetching file size: $e');
+    }
+  }
+
+  /// Prefetch lyrics in background so Lyrics tab opens instantly.
+  Future<void> _prefetchLyricsForSong(Song song) async {
+    if (song.id.isEmpty) return;
+    if (_lastPrefetchedLyricsSongId == song.id) return;
+    if (_lyricsPrefetchInProgress.contains(song.id)) return;
+
+    _lyricsPrefetchInProgress.add(song.id);
+    try {
+      await _lyricsService.fetchLyrics(
+        title: song.title,
+        artist: song.artist,
+        albumName: song.albumTitle,
+        durationSeconds: song.duration,
+      );
+      _lastPrefetchedLyricsSongId = song.id;
+      debugPrint('🎤 Lyrics prefetched for: ${song.title}');
+    } catch (e) {
+      debugPrint('🎤 Lyrics prefetch failed: $e');
+    } finally {
+      _lyricsPrefetchInProgress.remove(song.id);
     }
   }
 
@@ -493,16 +629,28 @@ class ExoPlayerService extends ChangeNotifier {
       return; // Stop playback here
     }
 
-    // Check if there's a next song in queue
-    if (_queue.isNotEmpty && _currentIndex < _queue.length - 1) {
-      debugPrint('📋 Playing next song in queue...');
-      _currentIndex++;
-      final nextSong = _queue[_currentIndex];
+    // Repeat current track forever until mode changes.
+    if (_loopMode == LoopMode.one && _currentSong != null) {
+      debugPrint('🔁 Loop one active, replaying current track');
+      await playHiResSong(_currentSong!);
+      return;
+    }
+
+    final nextIndex = _isShuffleMode ? _nextIndexShuffle() : _nextIndexSequential();
+
+    if (nextIndex != null && nextIndex >= 0 && nextIndex < _queue.length) {
+      _currentIndex = nextIndex;
+      if (_isShuffleMode) {
+        _recordShuffleVisit(nextIndex);
+      }
+
+      final nextSong = _queue[nextIndex];
+      debugPrint('📋 Auto next: ${nextSong.title} (index $nextIndex)');
       // Keep _isSongEnding true until playHiResSong resets it
       await playHiResSong(nextSong);
     } else {
-      // No more songs - reset flag and stay at zero
-      debugPrint('🔄 No more songs, staying at zero');
+      // No more songs in current mode.
+      debugPrint('🔄 End of queue reached, staying at zero');
       _isSongEnding = false;
       _isTransitioning = false;
       seekTo(Duration.zero);
@@ -561,6 +709,7 @@ class ExoPlayerService extends ChangeNotifier {
 
     _isLoading = true;
     _currentSong = song;
+    unawaited(_prefetchLyricsForSong(song));
 
     // For lossless, use direct URL. For Hi-Res, use DASH
     if (song.isLossless && !song.isHiRes) {
@@ -991,7 +1140,65 @@ class ExoPlayerService extends ChangeNotifier {
 
   void addToQueue(Song song) {
     _queue.add(song);
+    _onQueueStructureChanged();
     notifyListeners();
+  }
+
+  /// Play an existing item from queue without rebuilding queue.
+  Future<void> playAtQueueIndex(int index, {bool userInitiated = false}) async {
+    if (index < 0 || index >= _queue.length) return;
+
+    if (userInitiated) {
+      if (shouldExpandPlayer.value <= 0) {
+        shouldExpandPlayer.value = 1;
+      } else {
+        shouldExpandPlayer.value++;
+      }
+    }
+
+    _currentIndex = index;
+    _recordShuffleVisit(index);
+    final song = _queue[index];
+    await playHiResSong(song);
+    notifyListeners();
+  }
+
+  /// Reorder queue item positions.
+  void reorderQueue(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _queue.length) return;
+    if (newIndex < 0 || newIndex >= _queue.length) return;
+    if (oldIndex == newIndex) return;
+
+    final moved = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, moved);
+
+    if (_currentIndex == oldIndex) {
+      _currentIndex = newIndex;
+    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+      _currentIndex--;
+    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+      _currentIndex++;
+    }
+
+    _onQueueStructureChanged();
+    notifyListeners();
+  }
+
+  /// Move an existing queue item so it plays right after current song.
+  void moveToPlayNext(int index) {
+    if (index < 0 || index >= _queue.length) return;
+    if (_queue.length <= 1) return;
+    if (_currentIndex < 0 || _currentIndex >= _queue.length) return;
+
+    var targetIndex = _currentIndex + 1;
+    if (index < targetIndex) {
+      targetIndex -= 1;
+    }
+    targetIndex = targetIndex.clamp(0, _queue.length - 1);
+
+    if (index == targetIndex) return;
+
+    reorderQueue(index, targetIndex);
   }
 
   void removeFromQueue(int index) {
@@ -1000,6 +1207,10 @@ class ExoPlayerService extends ChangeNotifier {
       if (index <= _currentIndex) {
         _currentIndex--;
       }
+      if (_queue.isEmpty) {
+        _currentIndex = -1;
+      }
+      _onQueueStructureChanged();
       notifyListeners();
     }
   }
@@ -1029,26 +1240,62 @@ class ExoPlayerService extends ChangeNotifier {
     _position = Duration.zero;
     _duration = Duration.zero;
     _isLoading = false;
+    _resetShuffleState(keepCurrent: false);
     notifyListeners();
   }
 
   /// Add song to queue right after current song (Play Next)
   void addToQueueNext(Song song) {
-    if (_currentIndex >= 0 && _currentIndex < _queue.length - 1) {
-      // Insert after current song
-      _queue.insert(_currentIndex + 1, song);
-      debugPrint('▶️ Added "${song.title}" to play next');
-    } else {
-      // No current song or at end, just add to queue
-      _queue.add(song);
-      debugPrint('▶️ Added "${song.title}" to queue');
+    int activeIndex = -1;
+
+    // 1) Prefer tracked current index when valid.
+    if (_currentIndex >= 0 && _currentIndex < _queue.length) {
+      activeIndex = _currentIndex;
     }
+
+    // 2) Fallback: resolve active song from queue by song id.
+    if (activeIndex == -1 && _currentSong != null) {
+      activeIndex = _queue.indexWhere((s) => s.id == _currentSong!.id);
+      if (activeIndex != -1) {
+        _currentIndex = activeIndex;
+      }
+    }
+
+    // 3) If song already exists in queue, move it instead of duplicating.
+    final existingIndex = _queue.indexWhere((s) => s.id == song.id);
+    if (existingIndex != -1) {
+      if (activeIndex == -1) {
+        // No active anchor -> place existing song at top of queue.
+        reorderQueue(existingIndex, 0);
+        debugPrint('▶️ Moved "${song.title}" to top of queue');
+      } else {
+        moveToPlayNext(existingIndex);
+        debugPrint('▶️ Moved "${song.title}" to play next');
+      }
+      return;
+    }
+
+    // 4) Insert new song after active song, or at top when no active song.
+    final insertIndex = activeIndex == -1 ? 0 : (activeIndex + 1);
+    _queue.insert(insertIndex, song);
+
+    // Keep current pointer stable if insertion happens before current index.
+    if (_currentIndex >= insertIndex && _currentIndex != -1) {
+      _currentIndex++;
+    }
+
+    _onQueueStructureChanged();
+
+    debugPrint(
+      '▶️ Added "${song.title}" at index $insertIndex (after active index $activeIndex)',
+    );
     notifyListeners();
   }
 
   /// Add song to end of queue
   void addToQueueEnd(Song song) {
     _queue.add(song);
+    _onQueueStructureChanged();
     debugPrint('➕ Added "${song.title}" to end of queue');
     notifyListeners();
   }
@@ -1075,12 +1322,17 @@ class ExoPlayerService extends ChangeNotifier {
     _queue = List.from(songs);
     _currentIndex = startIndex;
 
+    if (_isShuffleMode) {
+      _resetShuffleState(keepCurrent: true);
+    }
+
     debugPrint(
       '📋 Queue set: ${_queue.length} songs, currentIndex: $_currentIndex',
     );
 
     if (_queue.isNotEmpty && _currentIndex < _queue.length) {
       final song = _queue[_currentIndex];
+      _recordShuffleVisit(_currentIndex);
       debugPrint('📋 Playing: ${song.title}');
       await playHiResSong(song);
     }
@@ -1132,16 +1384,21 @@ class ExoPlayerService extends ChangeNotifier {
       return;
     }
 
-    if (_currentIndex < _queue.length - 1) {
-      _currentIndex++;
-      final nextSong = _queue[_currentIndex];
-      debugPrint(
-        '⏭️ Playing next song: ${nextSong.title} (index $_currentIndex)',
-      );
-      await playHiResSong(nextSong);
-    } else {
-      debugPrint('⚠️ Already at last song in queue');
+    final nextIndex = _isShuffleMode ? _nextIndexShuffle() : _nextIndexSequential();
+
+    if (nextIndex == null || nextIndex < 0 || nextIndex >= _queue.length) {
+      debugPrint('⚠️ No next song for current mode');
+      return;
     }
+
+    _currentIndex = nextIndex;
+    if (_isShuffleMode) {
+      _recordShuffleVisit(nextIndex);
+    }
+
+    final nextSong = _queue[nextIndex];
+    debugPrint('⏭️ Playing next song: ${nextSong.title} (index $nextIndex)');
+    await playHiResSong(nextSong);
   }
 
   /// Play previous song in queue
@@ -1155,16 +1412,46 @@ class ExoPlayerService extends ChangeNotifier {
       return;
     }
 
-    if (_currentIndex > 0) {
-      _currentIndex--;
-      final prevSong = _queue[_currentIndex];
-      debugPrint(
-        '⏮️ Playing previous song: ${prevSong.title} (index $_currentIndex)',
-      );
+    if (_isShuffleMode) {
+      final current = _resolveCurrentIndex();
+      if (current != -1) {
+        _recordShuffleVisit(current);
+      }
+
+      if (_shuffleHistory.length > 1) {
+        // Remove current and use the previous visited index.
+        _shuffleHistory.removeLast();
+        final prevIndex = _shuffleHistory.last;
+        _currentIndex = prevIndex;
+        final prevSong = _queue[prevIndex];
+        debugPrint(
+          '⏮️ Playing previous (shuffle history): ${prevSong.title} (index $prevIndex)',
+        );
+        await playHiResSong(prevSong);
+      } else {
+        debugPrint('⏮️ No previous in shuffle history, restarting current song');
+        await seekTo(Duration.zero);
+      }
+      return;
+    }
+
+    final current = _resolveCurrentIndex();
+    int? prevIndex;
+
+    if (current > 0) {
+      prevIndex = current - 1;
+    } else if (current == 0 && _loopMode == LoopMode.all) {
+      prevIndex = _queue.length - 1;
+    }
+
+    if (prevIndex != null && prevIndex >= 0 && prevIndex < _queue.length) {
+      _currentIndex = prevIndex;
+      final prevSong = _queue[prevIndex];
+      debugPrint('⏮️ Playing previous song: ${prevSong.title} (index $prevIndex)');
       await playHiResSong(prevSong);
     } else {
-      // Jika di awal, restart lagu dari awal
-      debugPrint('⏮️ At first song, restarting from beginning');
+      // At start in non-loop mode: restart current song.
+      debugPrint('⏮️ At start, restarting current song');
       await seekTo(Duration.zero);
     }
   }

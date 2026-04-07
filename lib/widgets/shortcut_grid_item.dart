@@ -51,13 +51,19 @@ class _ShortcutGridItemState extends State<ShortcutGridItem> {
                   fadeOutDuration: Duration.zero,
                   width: double.infinity,
                   height: double.infinity,
-                  fit: BoxFit.cover,
-                  imageBuilder: (context, imageProvider) => Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      image: DecorationImage(
-                        image: imageProvider,
-                        fit: BoxFit.cover,
+                  fit: BoxFit.contain,
+                  imageBuilder: (context, imageProvider) => ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: ColoredBox(
+                      color: Color(0x11000000),
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: Image(
+                          image: imageProvider,
+                          fit: BoxFit.contain,
+                          alignment: Alignment.center,
+                          filterQuality: FilterQuality.medium,
+                        ),
                       ),
                     ),
                   ),
@@ -88,7 +94,7 @@ class _ShortcutGridItemState extends State<ShortcutGridItem> {
                       end: Alignment.bottomCenter,
                       colors: [
                         Colors.transparent,
-                        Colors.black.withOpacity(0.85),
+                        Colors.black.withValues(alpha: 0.85),
                       ],
                     ),
                   ),

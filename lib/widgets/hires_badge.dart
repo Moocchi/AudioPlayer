@@ -70,7 +70,7 @@ class _AnimatedHiResBadgeState extends State<AnimatedHiResBadge>
             borderRadius: BorderRadius.circular(4),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFFF6B35).withOpacity(0.35),
+                color: const Color(0xFFFF6B35).withValues(alpha: 0.35),
                 blurRadius: 6,
                 spreadRadius: 0,
               ),
