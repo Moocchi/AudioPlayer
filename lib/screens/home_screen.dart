@@ -12,6 +12,7 @@ import '../widgets/expandable_player.dart';
 import '../widgets/mini_equalizer.dart';
 import '../widgets/song_menu_sheet.dart'; // New Import
 import '../widgets/shortcut_grid_item.dart';
+import '../widgets/cache_badge.dart';
 
 import 'search_screen.dart';
 import 'collection_screen.dart';
@@ -431,33 +432,39 @@ class _HomeContentState extends State<_HomeContent> {
                       color: AppTheme.divider,
                     ),
                     child: song.albumCover != null
-                        ? CachedNetworkImage(
-                            imageUrl: song.albumCover!,
-                            memCacheWidth: 162, // 54 * 3
-                            maxWidthDiskCache: 162,
-                            fadeInDuration: Duration.zero,
-                            width: 54,
-                            height: 54,
-                            fit: BoxFit.cover,
-                            imageBuilder: (context, imageProvider) => Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
-                                image: DecorationImage(
-                                  image: imageProvider,
-                                  fit: BoxFit.cover,
+                        ? CacheBadge(
+                            song: song,
+                            size: 7,
+                            top: 4,
+                            right: 4,
+                            child: CachedNetworkImage(
+                                imageUrl: song.albumCover!,
+                                memCacheWidth: 162, // 54 * 3
+                                maxWidthDiskCache: 162,
+                                fadeInDuration: Duration.zero,
+                                width: 54,
+                                height: 54,
+                                fit: BoxFit.cover,
+                                imageBuilder: (context, imageProvider) => Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(6),
+                                    image: DecorationImage(
+                                      image: imageProvider,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                                placeholder: (context, url) => Container(
+                                  color: AppTheme.divider,
+                                ), // Simple placeholder
+                                errorWidget: (context, url, error) => const Center(
+                                  child: Icon(
+                                    Icons.music_note,
+                                    size: 24,
+                                    color: AppTheme.textSecondary,
+                                  ),
                                 ),
                               ),
-                            ),
-                            placeholder: (context, url) => Container(
-                              color: AppTheme.divider,
-                            ), // Simple placeholder
-                            errorWidget: (context, url, error) => const Center(
-                              child: Icon(
-                                Icons.music_note,
-                                size: 24,
-                                color: AppTheme.textSecondary,
-                              ),
-                            ),
                           )
                         : const Center(
                             child: Icon(

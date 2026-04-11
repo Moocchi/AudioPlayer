@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/settings_service.dart';
+import 'cached_songs_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -48,8 +49,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
-        // Display Section
+        // Storage Section
         const SizedBox(height: 8),
+        Text(
+          'Storage',
+          style: AppTheme.caption.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildCacheEntry(),
+        const SizedBox(height: 24),
+
+        // Display Section
         Text(
           'Display',
           style: AppTheme.caption.copyWith(
@@ -70,6 +84,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         const SizedBox(height: 100), // Space for mini player
       ],
+    );
+  }
+
+  Widget _buildCacheEntry() {
+    return Material(
+      color: AppTheme.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CachedSongsScreen()),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.divider, width: 0.5),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.storage_outlined, color: AppTheme.primary, size: 20),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Cached Songs', style: AppTheme.body),
+                    SizedBox(height: 2),
+                    Text('Manage songs stored for offline playback', style: AppTheme.caption),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppTheme.textSecondary, size: 20),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

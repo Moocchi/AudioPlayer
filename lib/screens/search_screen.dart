@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../widgets/hires_badge.dart';
 import '../widgets/song_menu_sheet.dart';
 import '../widgets/mini_equalizer.dart';
+import '../widgets/cache_badge.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -341,6 +342,11 @@ class SearchScreenState extends State<SearchScreen> {
             // Album art
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
+              child: CacheBadge(
+              song: song,
+              size: 7,
+              top: 4,
+              right: 4,
               child: song.albumCover != null
                   ? CachedNetworkImage(
                       imageUrl: song.albumCover!,
@@ -376,6 +382,7 @@ class SearchScreenState extends State<SearchScreen> {
                         size: 24,
                       ),
                     ),
+            ),
             ),
             const SizedBox(height: 4),
             // Song title
@@ -574,32 +581,46 @@ class SearchScreenState extends State<SearchScreen> {
               // Album Art (48x48)
               Stack(
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      color: Colors.grey[800],
-                    ),
-                    child: song.albumCover != null
-                        ? CachedNetworkImage(
-                            imageUrl: song.albumCover!,
-                            memCacheWidth: 144,
-                            maxWidthDiskCache: 144,
-                            fadeInDuration: Duration.zero,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            imageBuilder: (context, imageProvider) => Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(4),
-                                image: DecorationImage(
-                                  image: imageProvider,
-                                  fit: BoxFit.cover,
+                  CacheBadge(
+                    song: song,
+                    size: 7,
+                    top: 4,
+                    right: 4,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        color: Colors.grey[800],
+                      ),
+                      child: song.albumCover != null
+                          ? CachedNetworkImage(
+                              imageUrl: song.albumCover!,
+                              memCacheWidth: 144,
+                              maxWidthDiskCache: 144,
+                              fadeInDuration: Duration.zero,
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.cover,
+                              imageBuilder: (context, imageProvider) => Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(4),
+                                  image: DecorationImage(
+                                    image: imageProvider,
+                                    fit: BoxFit.cover,
+                                  ),
                                 ),
                               ),
-                            ),
-                            placeholder: (_, __) =>
-                                Container(color: AppTheme.divider),
-                            errorWidget: (_, __, ___) => const SizedBox(
+                              placeholder: (_, __) =>
+                                  Container(color: AppTheme.divider),
+                              errorWidget: (_, __, ___) => const SizedBox(
+                                width: 48,
+                                height: 48,
+                                child: Icon(
+                                  Icons.music_note,
+                                  color: Colors.white54,
+                                ),
+                              ),
+                            )
+                          : const SizedBox(
                               width: 48,
                               height: 48,
                               child: Icon(
@@ -607,15 +628,7 @@ class SearchScreenState extends State<SearchScreen> {
                                 color: Colors.white54,
                               ),
                             ),
-                          )
-                        : const SizedBox(
-                            width: 48,
-                            height: 48,
-                            child: Icon(
-                              Icons.music_note,
-                              color: Colors.white54,
-                            ),
-                          ),
+                    ),
                   ),
                   if (isPlaying)
                     const Positioned(

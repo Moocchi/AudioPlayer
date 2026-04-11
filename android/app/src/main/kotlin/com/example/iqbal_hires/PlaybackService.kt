@@ -219,11 +219,7 @@ class PlaybackService : Service() {
         
         android.util.Log.d("PlaybackService", "🔔 updateMetadata: $title - $artist")
 
-        // Keep MediaSession metadata in sync so quick settings media card
-        // (including HyperOS control center) can show current song info.
-        syncNowPlayingMetadata()
-        
-        // Load album art and show notification
+        // Load album art from local file:// (or remote) and update UI
         CoroutineScope(Dispatchers.IO).launch {
             val albumArt = try {
                 if (artUrl.isNotEmpty()) {
@@ -236,24 +232,34 @@ class PlaybackService : Service() {
             
             withContext(Dispatchers.Main) {
                 currentAlbumArt = albumArt
+                // Keep MediaSession metadata in sync so quick settings media card
+                // uses the actual image bytes (fixes restricted file:// UI permission)
+                syncNowPlayingMetadata(albumArt)
+                
                 showNotification(albumArt)
             }
         }
     }
 
-    private fun syncNowPlayingMetadata() {
+    private fun syncNowPlayingMetadata(bitmap: android.graphics.Bitmap?) {
         val exoPlayer = player as? ExoPlayer ?: return
 
         try {
-            val metadataBuilder = MediaMetadata.Builder()
+            val metadataBuilder = androidx.media3.common.MediaMetadata.Builder()
             if (currentTitle.isNotEmpty()) {
                 metadataBuilder.setTitle(currentTitle)
             }
             if (currentArtist.isNotEmpty()) {
                 metadataBuilder.setArtist(currentArtist)
             }
-            if (currentArtUrl.isNotEmpty()) {
-                metadataBuilder.setArtworkUri(Uri.parse(currentArtUrl))
+            
+            // Set image bytes if available, otherwise fallback to URI
+            if (bitmap != null) {
+                val stream = java.io.ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, stream)
+                metadataBuilder.setArtworkData(stream.toByteArray(), androidx.media3.common.MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            } else if (currentArtUrl.isNotEmpty()) {
+                metadataBuilder.setArtworkUri(android.net.Uri.parse(currentArtUrl))
             }
 
             val metadata = metadataBuilder.build()

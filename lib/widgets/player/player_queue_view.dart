@@ -7,6 +7,7 @@ import 'package:iqbal_hires/theme/app_theme.dart';
 import 'package:iqbal_hires/widgets/hires_badge.dart';
 import 'package:iqbal_hires/widgets/mini_equalizer.dart';
 import 'package:iqbal_hires/widgets/playlist_picker_dialog.dart';
+import 'package:iqbal_hires/widgets/cache_badge.dart';
 
 class PlayerQueueView extends StatefulWidget {
   const PlayerQueueView({super.key});
@@ -294,31 +295,37 @@ class _PlayerQueueViewState extends State<PlayerQueueView> {
                     children: [
                       Stack(
                         children: [
-                          Container(
-                            height: 54,
-                            width: 54,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(6),
-                              color: AppTheme.divider,
-                            ),
-                            child: song.albumCover != null
-                                ? CachedNetworkImage(
-                                    imageUrl: song.albumCover!,
-                                    width: 54,
-                                    height: 54,
-                                    fit: BoxFit.cover,
-                                    imageBuilder: (context, imageProvider) => Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(6),
-                                        image: DecorationImage(
-                                          image: imageProvider,
-                                          fit: BoxFit.cover,
+                          CacheBadge(
+                            song: song,
+                            size: 7,
+                            top: 4,
+                            right: 4,
+                            child: Container(
+                              height: 54,
+                              width: 54,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                color: AppTheme.divider,
+                              ),
+                              child: song.albumCover != null
+                                  ? CachedNetworkImage(
+                                      imageUrl: song.albumCover!,
+                                      width: 54,
+                                      height: 54,
+                                      fit: BoxFit.cover,
+                                      imageBuilder: (context, imageProvider) => Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(6),
+                                          image: DecorationImage(
+                                            image: imageProvider,
+                                            fit: BoxFit.cover,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    errorWidget: (_, __, ___) => _placeholderCover(size: 54),
-                                  )
-                                : _placeholderCover(size: 54),
+                                      errorWidget: (_, __, ___) => _placeholderCover(size: 54),
+                                    )
+                                  : _placeholderCover(size: 54),
+                            ),
                           ),
                           if (isPlaying)
                             const Positioned(

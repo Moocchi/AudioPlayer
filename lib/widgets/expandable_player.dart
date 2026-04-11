@@ -14,6 +14,7 @@ import '../widgets/player_menu_sheet.dart';
 import '../widgets/player/player_queue_view.dart';
 import '../widgets/player/player_lyrics_view.dart';
 import '../widgets/player/player_about_view.dart';
+import 'cache_badge.dart';
 
 class ExpandablePlayer extends StatefulWidget {
   const ExpandablePlayer({super.key});
@@ -329,7 +330,9 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
       top: currentTop,
       width: currentSize,
       height: currentSize,
-      child: TweenAnimationBuilder<Color?>(
+      child: Stack(
+        children: [
+          TweenAnimationBuilder<Color?>(
         tween: ColorTween(begin: _shadowColor, end: _shadowColor),
         duration: const Duration(milliseconds: 600),
         builder: (context, color, child) {
@@ -363,6 +366,36 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
                 : Container(color: AppTheme.divider),
           );
         },
+      ),
+      // Badge only visible in expanded state (fades in as player opens)
+      if (value > 0.5)
+        Positioned(
+          top: 10,
+          right: 10,
+          child: FutureBuilder<CacheStatus>(
+            future: ExoPlayerService().getSongCacheStatus(
+              song,
+              song.isHiRes ? 'HI_RES' : (song.isLossless ? 'LOSSLESS' : 'REGULAR'),
+            ),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || snapshot.data != CacheStatus.full) {
+                return const SizedBox.shrink();
+              }
+              return Opacity(
+                opacity: ((value - 0.5) * 2).clamp(0.0, 1.0),
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF00FF41),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        ],
       ),
     );
   }

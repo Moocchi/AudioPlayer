@@ -14,6 +14,11 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.FileDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.dash.manifest.DashManifest
@@ -41,6 +46,30 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, Playb
     private var currentManifest: DashManifest? = null
     private val handler = Handler(Looper.getMainLooper())
     
+    companion object {
+        private var downloadCache: SimpleCache? = null
+        private var maxCacheBytes: Long = 1024L * 1024L * 1024L // default 1GB
+        
+        @Synchronized
+        fun getCache(context: Context): SimpleCache {
+            if (downloadCache == null) {
+                val cacheDir = java.io.File(context.cacheDir, "audio_cache")
+                val evictor = LeastRecentlyUsedCacheEvictor(maxCacheBytes)
+                val databaseProvider = StandaloneDatabaseProvider(context)
+                downloadCache = SimpleCache(cacheDir, evictor, databaseProvider)
+            }
+            return downloadCache!!
+        }
+
+        @Synchronized
+        fun rebuildCache(context: Context, newMaxBytes: Long) {
+            maxCacheBytes = newMaxBytes
+            downloadCache?.release()
+            downloadCache = null
+            getCache(context) // rebuild with new size
+        }
+    }
+
     // SkipCallback implementation - send events to Flutter
     override fun onSkipNext() {
         android.util.Log.d("ExoPlayer", "⏭️ Skip Next triggered from notification")
@@ -79,11 +108,78 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, Playb
         when (call.method) {
             "setDashSource" -> {
                 val url = call.argument<String>("url")
+                val songId = call.argument<String>("songId") ?: ""
                 if (url != null) {
-                    setDashSource(url, result)
+                    setDashSource(url, songId, result)
                 } else {
                     result.error("INVALID_ARGUMENT", "URL is null", null)
                 }
+            }
+            "getAudioCachedBytes" -> {
+                val songId = call.argument<String>("songId") ?: ""
+                var totalBytes = 0L
+                if (songId.isNotEmpty()) {
+                    try {
+                        val cache = getCache(context)
+                        val matchingKeys = cache.keys.filter { it.startsWith(songId) }
+                        for (k in matchingKeys) {
+                            val spans = cache.getCachedSpans(k)
+                            for (span in spans) {
+                                totalBytes += span.length
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ExoPlayer", "Error calculating cache bytes", e)
+                    }
+                }
+                result.success(totalBytes)
+            }
+            "clearSongCache" -> {
+                val songId = call.argument<String>("songId") ?: ""
+                try {
+                    val cache = getCache(context)
+                    val keysToRemove = cache.keys.filter { it.startsWith(songId) }
+                    for (k in keysToRemove) {
+                        cache.removeResource(k)
+                    }
+                    android.util.Log.d("ExoPlayer", "🗑️ Cleared cache for songId: $songId, keys: $keysToRemove")
+                    result.success(true)
+                } catch (e: Exception) {
+                    android.util.Log.e("ExoPlayer", "Error clearing cache for $songId", e)
+                    result.error("CACHE_ERROR", e.message, null)
+                }
+            }
+            "clearAllCache" -> {
+                try {
+                    val cache = getCache(context)
+                    val allKeys = cache.keys.toList()
+                    for (k in allKeys) {
+                        cache.removeResource(k)
+                    }
+                    android.util.Log.d("ExoPlayer", "🗑️ Cleared all audio cache (${allKeys.size} keys)")
+                    result.success(true)
+                } catch (e: Exception) {
+                    android.util.Log.e("ExoPlayer", "Error clearing all cache", e)
+                    result.error("CACHE_ERROR", e.message, null)
+                }
+            }
+            "setCacheSize" -> {
+                val bytes = call.argument<Long>("bytes") ?: (1024L * 1024L * 1024L)
+                rebuildCache(context, bytes)
+                android.util.Log.d("ExoPlayer", "💾 Cache max size set to ${bytes / (1024*1024)}MB")
+                result.success(true)
+            }
+            "getTotalCachedBytes" -> {
+                var total = 0L
+                try {
+                    val cache = getCache(context)
+                    for (k in cache.keys) {
+                        for (span in cache.getCachedSpans(k)) {
+                            total += span.length
+                        }
+                    }
+                } catch (e: Exception) { /* ignore */ }
+                result.success(total)
             }
             "play" -> {
                 android.util.Log.d("ExoPlayer", "▶️  Play called | Player ready: ${exoPlayer?.playWhenReady} | State: ${exoPlayer?.playbackState}")
@@ -194,7 +290,7 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, Playb
         }
     }
 
-    private fun setDashSource(url: String, result: Result) {
+    private fun setDashSource(url: String, songId: String, result: Result) {
         try {
             ensurePlayerConnection()
 
@@ -247,34 +343,56 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, Playb
                 android.util.Log.d("ExoPlayer", "✅ File source prepared: $url")
             } else {
                 // For HTTP URLs (including localhost manifest serving)
-                // Use DefaultHttpDataSource with longer timeouts for Hi-Res streaming
                 val httpDataSourceFactory = DefaultHttpDataSource.Factory()
                     .setAllowCrossProtocolRedirects(true)
                     .setConnectTimeoutMs(30000)
                     .setReadTimeoutMs(30000)
                     .setUserAgent("ExoPlayer-HiRes/1.0 (Tidal Compatible)")
 
+                // Configure CacheKeyFactory to build a stable cache key
+                // Ignore dynamic query parameters token/signatures in Katze API segments
+                val cacheKeyFactory = CacheKeyFactory { dataSpec ->
+                    val path = dataSpec.uri.path ?: ""
+                    
+                    // Don't mistakenly cache the dynamic master manifest itself
+                    // It's fetched quickly locally anyway.
+                    if (path.endsWith("manifest.mpd") || songId.isEmpty()) {
+                        return@CacheKeyFactory CacheKeyFactory.DEFAULT.buildCacheKey(dataSpec)
+                    }
+                    
+                    // For audio segments and direct streams, use custom stable key locking on the songId + resource path.
+                    // Example chunk key: "katze_song_1234_/hires/audio/init.mp4"
+                    return@CacheKeyFactory "${songId}_$path"
+                }
+
+                // Wrap HttpDataSource with DataCacheSource to automatically cache while streaming!
+                val cacheDataSourceFactory = CacheDataSource.Factory()
+                    .setCache(getCache(context))
+                    .setUpstreamDataSourceFactory(httpDataSourceFactory)
+                    .setCacheKeyFactory(cacheKeyFactory)
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
                 // Check if it's a DASH manifest URL
                 if (url.endsWith(".mpd") || url.contains("manifest")) {
                     // DASH source - simplified for VOD seeking
-                    val dashMediaSource = DashMediaSource.Factory(httpDataSourceFactory)
+                    val dashMediaSource = DashMediaSource.Factory(cacheDataSourceFactory)
                         .createMediaSource(MediaItem.fromUri(url))
                     
                     exoPlayer?.setMediaSource(dashMediaSource)
                     exoPlayer?.prepare()
                     
                     sendEvent("source_set", mapOf("url" to url, "type" to "dash"))
-                    android.util.Log.d("ExoPlayer", "✅ DASH source prepared with VOD seeking support: $url")
+                    android.util.Log.d("ExoPlayer", "✅ DASH source prepared with Cache: $url")
                 } else {
                     // Progressive source for regular audio files
-                    val progressiveMediaSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                    val progressiveMediaSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory)
                         .createMediaSource(MediaItem.fromUri(url))
                     
                     exoPlayer?.setMediaSource(progressiveMediaSource)
                     exoPlayer?.prepare()
                     
                     sendEvent("source_set", mapOf("url" to url, "type" to "progressive"))
-                    android.util.Log.d("ExoPlayer", "✅ Progressive source prepared: $url")
+                    android.util.Log.d("ExoPlayer", "✅ Progressive source prepared with Cache: $url")
                 }
             }
             

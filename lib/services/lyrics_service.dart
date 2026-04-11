@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LyricLine {
   final Duration timestamp;
@@ -63,13 +64,58 @@ class LyricsService {
         result = await _fetchWithSearch(title: title, artist: artist);
       }
 
-      _cache[cacheKey] = result;
-      return result;
+      if (result != null) {
+        _cache[cacheKey] = result;
+        // Save to disk for offline playback
+        final prefs = await SharedPreferences.getInstance();
+        prefs.setString('lyrics_plain_$cacheKey', result.plainLyrics ?? '');
+        
+        // Serialize synced lines back to LRC roughly
+        if (result.hasSyncedLyrics) {
+            String lrcStr = result.syncedLyrics.map((e) {
+               final m = (e.timestamp.inMinutes).toString().padLeft(2, '0');
+               final s = (e.timestamp.inSeconds % 60).toString().padLeft(2, '0');
+               final ms = (e.timestamp.inMilliseconds % 1000).toString().padLeft(3, '0');
+               return '[$m:$s.$ms] ${e.text}';
+            }).join('\n');
+            prefs.setString('lyrics_sync_$cacheKey', lrcStr);
+        } else {
+            prefs.setString('lyrics_sync_$cacheKey', '');
+        }
+        
+        return result;
+      }
+      
+      // If fetching fails (offline) but no result, try loading from disk
+      return await _loadFromDiskCache(cacheKey);
+      
     } catch (e) {
       debugPrint('❌ Lyrics fetch error: $e');
+      return await _loadFromDiskCache(cacheKey);
+    }
+  }
+
+  Future<LyricsResult?> _loadFromDiskCache(String cacheKey) async {
+      try {
+          final prefs = await SharedPreferences.getInstance();
+          final plain = prefs.getString('lyrics_plain_$cacheKey');
+          final syncStr = prefs.getString('lyrics_sync_$cacheKey');
+          
+          if ((plain != null && plain.isNotEmpty) || (syncStr != null && syncStr.isNotEmpty)) {
+              debugPrint('🎤 Offline: Loaded lyrics from disk cache');
+              List<LyricLine> syncedLines = [];
+              if (syncStr != null && syncStr.isNotEmpty) {
+                  syncedLines = _parseLrc(syncStr);
+              }
+              final result = LyricsResult(syncedLyrics: syncedLines, plainLyrics: plain);
+              _cache[cacheKey] = result;
+              return result;
+          }
+      } catch(e) {
+          debugPrint('❌ Failed to load offline lyrics cache: $e');
+      }
       _cache[cacheKey] = null;
       return null;
-    }
   }
 
   Future<LyricsResult?> _fetchWithGet({

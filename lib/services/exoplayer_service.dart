@@ -5,11 +5,16 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../models/song.dart';
 import 'play_history_service.dart';
 import '../models/loop_mode.dart'; // Import LoopMode
 import 'lyrics_service.dart';
+
+/// Cache completeness status indicator
+enum CacheStatus { none, partial, full }
 
 /// Local HTTP server for serving DASH manifests
 class LocalManifestServer {
@@ -604,6 +609,11 @@ class ExoPlayerService extends ChangeNotifier {
     // Block position updates during transition
     _isTransitioning = true;
 
+    // ✅ Song played to completion — mark audio as fully cached
+    if (_currentSong != null) {
+      _markAudioFullyCached(_currentSong!.id);
+    }
+
     // Set song ending flag for UI animation
     _isSongEnding = true;
     _isPlaying = false;
@@ -660,6 +670,17 @@ class ExoPlayerService extends ChangeNotifier {
     debugPrint('✅ Song end handled');
   }
 
+  /// Mark a song's audio as fully cached (called when song plays to end)
+  Future<void> _markAudioFullyCached(String songId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('audio_full_cached_$songId', true);
+      debugPrint('💾 Marked $songId as fully cached audio');
+    } catch (e) {
+      debugPrint('❌ Failed to mark audio as cached: $e');
+    }
+  }
+
   /// Reset position to beginning with smooth animation support
   void _resetToBeginning() {
     _isPlaying = false;
@@ -693,6 +714,11 @@ class ExoPlayerService extends ChangeNotifier {
     PlayHistoryService().recordPlay(song);
     // Save as last played for restoration
     PlayHistoryService().saveLastPlayedSong(song);
+    
+    // 💾 Persist song metadata for the Cache Management screen
+    unawaited(SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('song_catalog_${song.id}', jsonEncode(song.toJson()));
+    }));
 
     // STOP previous playback to ensure clean state (Fixes HiRes -> Lossless switch bug)
     await stop();
@@ -722,9 +748,58 @@ class ExoPlayerService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Determine quality based on song tags
+      // ⚡ CACHE-FIRST: If audio is fully cached, skip the API call entirely
       String quality = song.isHiRes ? "HI_RES_LOSSLESS" : "LOSSLESS";
       debugPrint('🎯 Quality: $quality for song: ${song.title}');
+      String prefCacheKey = 'api_cache_${song.id}_$quality';
+      final prefs = await SharedPreferences.getInstance();
+
+      final isAudioFullyCached = prefs.getBool('audio_full_cached_${song.id}') ?? false;
+      if (isAudioFullyCached) {
+        final cachedBody = prefs.getString(prefCacheKey);
+        if (cachedBody != null && cachedBody.isNotEmpty) {
+          debugPrint('⚡ Cache-first: Skipping API, using local cache for ${song.title}');
+          _isLoading = true;
+          _loadingStatus = 'Loading from cache...';
+          notifyListeners();
+
+          if (localGenerationId != _currentSongGenerationId) return;
+
+          final data = json.decode(cachedBody);
+          if (data['data'] != null) {
+            final manifestMimeType = data['data']['manifestMimeType'] ?? '';
+            final directUrl = data['data']['directUrl'] as String?;
+
+            if (song.isLossless && !song.isHiRes && directUrl != null && directUrl.isNotEmpty) {
+              if (localGenerationId != _currentSongGenerationId) return;
+              await setSource(directUrl, song.id + '_LOSSLESS');
+              _isLoading = false; _loadingStatus = ''; _isPlaying = true;
+              _isSongEnding = false; _isTransitioning = false;
+              notifyListeners();
+              await play();
+              await _updateNotification(song);
+              debugPrint('✅ Cache-first: Lossless playing from cache!');
+              return;
+            }
+
+            final manifestB64 = data['data']['manifest'] as String?;
+            if (manifestB64 != null) {
+              final manifestDecoded = utf8.decode(base64.decode(manifestB64));
+              if (manifestMimeType == 'application/dash+xml' || manifestDecoded.startsWith('<?xml')) {
+                if (localGenerationId != _currentSongGenerationId) return;
+                await _playDashStream(song, manifestDecoded);
+                debugPrint('✅ Cache-first: DASH playing from cache!');
+                return;
+              }
+            }
+          }
+          // Fallthrough: cached data invalid, continue to API call below
+          debugPrint('⚠️ Cache-first: Stored response invalid, falling back to API');
+        }
+      }
+
+      // 🌐 NETWORK: Fetch from API (only if not fully cached or cache miss)
+      debugPrint('🌐 API Request for: ${song.title}');
 
       // Get manifest from katze API with retry logic
       var url = Uri.parse(
@@ -787,9 +862,23 @@ class ExoPlayerService extends ChangeNotifier {
         }
       }
 
+      // Create a cache key for API response (already defined above)
+
+      String responseBody = '';
+
       // If all retries failed
       if (res == null || res.statusCode != 200) {
-        throw lastError ?? Exception('API Error: Unknown');
+        String? cachedBody = prefs.getString(prefCacheKey);
+        if (cachedBody != null && cachedBody.isNotEmpty) {
+            debugPrint('⚠️ Offline/API Error: Using offline cached API response for playback!');
+            responseBody = cachedBody;
+        } else {
+            throw lastError ?? Exception('API Error: Unknown');
+        }
+      } else {
+        responseBody = res.body;
+        // Save to cache for future offline play
+        await prefs.setString(prefCacheKey, responseBody);
       }
 
       // RACE CONDITION CHECK: If another song started while we were waiting, ABORT.
@@ -800,7 +889,7 @@ class ExoPlayerService extends ChangeNotifier {
         return;
       }
 
-      var data = json.decode(res.body);
+      var data = json.decode(responseBody);
 
       if (data['data'] == null) {
         throw Exception('No data in API response');
@@ -823,7 +912,7 @@ class ExoPlayerService extends ChangeNotifier {
         if (localGenerationId != _currentSongGenerationId) return;
 
         // Set source first (Use setSource for direct URLs, not setDashSource)
-        await setSource(directUrl);
+        await setSource(directUrl, song.id + '_LOSSLESS');
         // await _channel.invokeMethod('setDashSource', {'url': directUrl});
 
         // Clear loading IMMEDIATELY after source is set, BEFORE play()
@@ -866,7 +955,7 @@ class ExoPlayerService extends ChangeNotifier {
         debugPrint('🎵 Regular audio source: $audioUrl');
 
         // Use setSource for regular playback
-        await setSource(audioUrl);
+        await setSource(audioUrl, song.id + '_REGULAR');
 
         _isPlaying = true;
         _isSongEnding = false; // Reset AFTER loading, ready to play
@@ -975,15 +1064,16 @@ class ExoPlayerService extends ChangeNotifier {
       final localServer = await LocalManifestServer.getInstance();
       localServer.setManifest(mpdContent);
 
-      final manifestUrl = localServer.manifestUrl;
-      debugPrint('🌐 Local manifest URL: $manifestUrl');
+      // Pass song ID with HIRES suffix for solid caching
+      await setDashSource(localServer.manifestUrl, song.id + '_HIRES');
+      debugPrint('🌐 Local manifest URL: ${localServer.manifestUrl}');
 
       _loadingStatus = 'Starting Hi-Res stream...';
       notifyListeners();
 
       // Use ExoPlayer to stream directly from DASH manifest
       // ExoPlayer will fetch segments from Tidal CDN automatically
-      await _channel.invokeMethod('setDashSource', {'url': manifestUrl});
+      // Note: setDashSource was already called above.
       await Future.delayed(const Duration(milliseconds: 500));
 
       // Reset song ending flag NOW - right before play starts
@@ -1095,9 +1185,9 @@ class ExoPlayerService extends ChangeNotifier {
     }
   }
 
-  Future<void> setDashSource(String url) async {
+  Future<void> setDashSource(String url, String songId) async {
     try {
-      await _channel.invokeMethod('setDashSource', {'url': url});
+      await _channel.invokeMethod('setDashSource', {'url': url, 'songId': songId});
       debugPrint('✅ ExoPlayer: DASH Source set - $url');
     } catch (e) {
       debugPrint('❌ Error setting source: $e');
@@ -1106,20 +1196,20 @@ class ExoPlayerService extends ChangeNotifier {
   }
 
   /// Set source for standard audio streaming (Lossless/Regular)
-  Future<void> setSource(String url) async {
+  Future<void> setSource(String url, String songId) async {
     try {
       // Assuming native plugin has setSource or setUrl.
       // If not, we might need setDashSource but usually that's for DASH.
       // Trying "setSource" as a likely method name given standard plugins.
       // If this fails, we might need to fallback.
-      await _channel.invokeMethod('setSource', {'url': url});
+      await _channel.invokeMethod('setSource', {'url': url, 'songId': songId});
       debugPrint('✅ ExoPlayer: Standard Source set - $url');
     } catch (e) {
       debugPrint('❌ Error setting standard source: $e');
       // Fallback: try setDashSource if setSource fails (unlikely if plugin handles both)
       try {
         debugPrint('⚠️ fallback to setDashSource...');
-        await _channel.invokeMethod('setDashSource', {'url': url});
+        await _channel.invokeMethod('setDashSource', {'url': url, 'songId': songId});
       } catch (e2) {
         throw Exception('Failed to set standard source: $e');
       }
@@ -1464,10 +1554,23 @@ class ExoPlayerService extends ChangeNotifier {
 
   Future<void> _updateNotification(Song song) async {
     try {
+      String localAlbumCover = song.albumCover ?? '';
+      
+      if (localAlbumCover.isNotEmpty && localAlbumCover.startsWith('http')) {
+        try {
+          // Pre-fetch and cache the image using DefaultCacheManager
+          final file = await DefaultCacheManager().getSingleFile(localAlbumCover);
+          localAlbumCover = 'file://${file.path}';
+          debugPrint('🖼️ Album art cached locally: \${file.path}');
+        } catch (e) {
+          debugPrint('❌ Failed to fetch local album cover: $e');
+        }
+      }
+
       await _channel.invokeMethod('updateMetadata', {
         'title': song.title,
         'artist': song.artist,
-        'albumCover': song.albumCover ?? '',
+        'albumCover': localAlbumCover,
       });
       debugPrint('🔔 Notification updated: ${song.title} - ${song.artist}');
     } catch (e) {
@@ -1561,6 +1664,118 @@ class ExoPlayerService extends ChangeNotifier {
       await _channel.invokeMethod('setVolume', {'volume': volume});
     } catch (e) {
       debugPrint('❌ Error setting volume: $e');
+    }
+  }
+
+  /// Get the cache status of a given song
+  Future<CacheStatus> getSongCacheStatus(Song song, String quality) async {
+      try {
+          bool hasAnyCache = false;
+          bool isComplete = true; // Assume true until a missing piece is found
+
+          // 1. Check Album Art
+          if (song.albumCover != null && song.albumCover!.isNotEmpty) {
+              final fileInfo = await DefaultCacheManager().getFileFromCache(song.albumCover!);
+              if (fileInfo != null) {
+                  hasAnyCache = true;
+              } else {
+                  isComplete = false;
+              }
+          }
+
+          // 2. Check Lyrics Cache
+          final prefs = await SharedPreferences.getInstance();
+          final cacheKey = '${song.artist.split(',').first.trim().toLowerCase()}_${song.title.toLowerCase()}';
+          final plain = prefs.getString('lyrics_plain_$cacheKey');
+          final syncStr = prefs.getString('lyrics_sync_$cacheKey');
+          if ((plain != null && plain.isNotEmpty) || (syncStr != null && syncStr.isNotEmpty)) {
+              hasAnyCache = true;
+          } else {
+              isComplete = false;
+          }
+
+          // 3. Check Audio Native Cache
+          String songIdForCache = song.id + (quality.contains('LOSSLESS') ? '_LOSSLESS' : 
+                                  quality.contains('HI_RES') ? '_HIRES' : '_REGULAR');
+                                  
+          int cachedBytes = 0;
+          try {
+              cachedBytes = await _channel.invokeMethod('getAudioCachedBytes', {'songId': songIdForCache}) ?? 0;
+          } catch(e) {
+              debugPrint('Failed to get audio cache bytes: $e');
+          }
+
+          if (cachedBytes > 0) {
+              hasAnyCache = true;
+              // For non-DASH (lossless/regular), we can check by file size.
+              if (song.fileSize != null && song.fileSize! > 0) {
+                  // Allow 1% margin of error
+                  if (cachedBytes < (song.fileSize! * 0.99)) {
+                      isComplete = false;
+                  }
+              } else {
+                  // For DASH Hi-Res, we cannot reliably calculate total size.
+                  // Instead, check if we've stored a "played to end" flag.
+                  final fullyPlayed = prefs.getBool('audio_full_cached_${song.id}') ?? false;
+                  if (!fullyPlayed) {
+                      isComplete = false;
+                  }
+              }
+          } else {
+              isComplete = false;
+          }
+
+          if (!hasAnyCache) return CacheStatus.none;
+          if (hasAnyCache && isComplete) return CacheStatus.full;
+          return CacheStatus.partial;
+
+      } catch(e) {
+         return CacheStatus.none;
+      }
+  }
+
+  /// Get cached bytes in native layer for a song by its raw ID
+  Future<int> getAudioCachedBytes(String songId) async {
+    try {
+      return await _channel.invokeMethod<int>('getAudioCachedBytes', {'songId': songId}) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Get total cached bytes across all songs
+  Future<int> getTotalCachedBytes() async {
+    try {
+      return await _channel.invokeMethod<int>('getTotalCachedBytes') ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Clear native audio cache for a specific song
+  Future<void> clearSongCache(String songId) async {
+    try {
+      await _channel.invokeMethod('clearSongCache', {'songId': songId});
+    } catch (e) {
+      debugPrint('❌ clearSongCache error: $e');
+    }
+  }
+
+  /// Clear ALL native audio cache
+  Future<void> clearAllCache() async {
+    try {
+      await _channel.invokeMethod('clearAllCache');
+    } catch (e) {
+      debugPrint('❌ clearAllCache error: $e');
+    }
+  }
+
+  /// Set cache size limit (bytes)
+  Future<void> setCacheSize(int bytes) async {
+    try {
+      await _channel.invokeMethod('setCacheSize', {'bytes': bytes});
+    } catch (e) {
+      debugPrint('❌ setCacheSize error: $e');
     }
   }
 

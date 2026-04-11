@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
 import '../theme/app_theme.dart';
 import 'song_menu_sheet.dart';
+import 'cache_badge.dart';
 
 /// Grid item with scale animation on long press
 class ShortcutGridItem extends StatefulWidget {
@@ -38,41 +39,47 @@ class _ShortcutGridItemState extends State<ShortcutGridItem> {
             fit: StackFit.expand,
             children: [
               // Album cover
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  color: AppTheme.divider,
-                ),
-                child: CachedNetworkImage(
-                  imageUrl: widget.song.albumCover ?? '',
-                  memCacheWidth: 450,
-                  maxWidthDiskCache: 450,
-                  fadeInDuration: Duration.zero,
-                  fadeOutDuration: Duration.zero,
-                  width: double.infinity,
-                  height: double.infinity,
-                  fit: BoxFit.contain,
-                  imageBuilder: (context, imageProvider) => ClipRRect(
+              CacheBadge(
+                song: widget.song,
+                size: 7,
+                top: 6,
+                right: 6,
+                child: Container(
+                  decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(4),
-                    child: ColoredBox(
-                      color: Color(0x11000000),
-                      child: Padding(
-                        padding: const EdgeInsets.all(2),
-                        child: Image(
-                          image: imageProvider,
-                          fit: BoxFit.contain,
-                          alignment: Alignment.center,
-                          filterQuality: FilterQuality.medium,
+                    color: AppTheme.divider,
+                  ),
+                  child: CachedNetworkImage(
+                    imageUrl: widget.song.albumCover ?? '',
+                    memCacheWidth: 450,
+                    maxWidthDiskCache: 450,
+                    fadeInDuration: Duration.zero,
+                    fadeOutDuration: Duration.zero,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.contain,
+                    imageBuilder: (context, imageProvider) => ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: ColoredBox(
+                        color: Color(0x11000000),
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Image(
+                            image: imageProvider,
+                            fit: BoxFit.contain,
+                            alignment: Alignment.center,
+                            filterQuality: FilterQuality.medium,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  placeholder: (context, url) => const SizedBox.shrink(),
-                  errorWidget: (context, url, error) => const Center(
-                    child: Icon(
-                      Icons.music_note,
-                      size: 24,
-                      color: AppTheme.textSecondary,
+                    placeholder: (context, url) => const SizedBox.shrink(),
+                    errorWidget: (context, url, error) => const Center(
+                      child: Icon(
+                        Icons.music_note,
+                        size: 24,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   ),
                 ),
