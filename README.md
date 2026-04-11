@@ -9,8 +9,8 @@
 | ✓ | Playlist, liked song, Quick choose, and quick Shortcut |
 | ✓ | Better animation |
 | ✓ | Sleep timer |
-| ` | Visual Fix  |
-| | SD card / internal cache saving |
+| ✓ | Visual Fix  |
+| ✓ | internal cache |
 | | DAC Reader |
 | | Auto-fill queue according to song genre |
 | | Fade out transition song |
