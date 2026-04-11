@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import com.squareup.picasso.Picasso
@@ -167,7 +168,41 @@ class PlaybackService : Service() {
         
         // Create MediaSession with unique ID using timestamp
         try {
-            mediaSession = MediaSession.Builder(this, exoPlayer)
+            val forwardingPlayer = object : ForwardingPlayer(exoPlayer) {
+                override fun hasNextMediaItem(): Boolean = true
+                override fun hasPreviousMediaItem(): Boolean = true
+
+                override fun seekToNextMediaItem() {
+                    android.util.Log.d("PlaybackService", "⏭️ Intercepted seekToNextMediaItem from MediaSession")
+                    skipCallback?.onSkipNext()
+                }
+
+                override fun seekToPreviousMediaItem() {
+                    android.util.Log.d("PlaybackService", "⏮️ Intercepted seekToPreviousMediaItem from MediaSession")
+                    skipCallback?.onSkipPrevious()
+                }
+
+                override fun seekToNext() {
+                    android.util.Log.d("PlaybackService", "⏭️ Intercepted seekToNext from MediaSession")
+                    skipCallback?.onSkipNext()
+                }
+
+                override fun seekToPrevious() {
+                    android.util.Log.d("PlaybackService", "⏮️ Intercepted seekToPrevious from MediaSession")
+                    skipCallback?.onSkipPrevious()
+                }
+
+                override fun getAvailableCommands(): Player.Commands {
+                    return super.getAvailableCommands().buildUpon()
+                        .add(Player.COMMAND_SEEK_TO_NEXT)
+                        .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                        .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                        .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                        .build()
+                }
+            }
+
+            mediaSession = MediaSession.Builder(this, forwardingPlayer)
                 .setId("HiresSession_${System.currentTimeMillis()}")
                 .build()
             android.util.Log.d("PlaybackService", "✅ Player and MediaSession set")

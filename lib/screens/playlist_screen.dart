@@ -47,6 +47,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           AndroidUiSettings(
             toolbarTitle: 'Crop Playlist Cover',
             toolbarColor: AppTheme.primary,
+            statusBarColor: AppTheme.primary,
             toolbarWidgetColor: Colors.white,
             lockAspectRatio: false,
           ),

@@ -202,20 +202,22 @@ class _PlayerQueueViewState extends State<PlayerQueueView> {
 
         if (queue.isEmpty) {
           return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(
-                  Icons.queue_music_outlined,
-                  size: 56,
-                  color: AppTheme.divider,
-                ),
-                SizedBox(height: 12),
-                Text(
-                  'Antrean kosong',
-                  style: TextStyle(color: AppTheme.textSecondary),
-                ),
-              ],
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    Icons.queue_music_outlined,
+                    size: 56,
+                    color: AppTheme.divider,
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Antrean kosong',
+                    style: TextStyle(color: AppTheme.textSecondary),
+                  ),
+                ],
+              ),
             ),
           );
         }

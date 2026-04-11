@@ -265,57 +265,61 @@ class _PlayerLyricsViewState extends State<PlayerLyricsView> {
 
   Widget _buildLoadingState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 32,
-            height: 32,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              color: AppTheme.primary.withOpacity(0.7),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: AppTheme.primary.withOpacity(0.7),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Mencari lirik...',
-            style: TextStyle(
-              fontSize: 15,
-              color: AppTheme.textSecondary,
+            const SizedBox(height: 16),
+            Text(
+              'Mencari lirik...',
+              style: TextStyle(
+                fontSize: 15,
+                color: AppTheme.textSecondary,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildEmptyState(String message) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.lyrics_outlined,
-            size: 64,
-            color: AppTheme.textSecondary.withOpacity(0.3),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary.withOpacity(0.7),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.lyrics_outlined,
+              size: 64,
+              color: AppTheme.textSecondary.withOpacity(0.3),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Coba lagu lain',
-            style: TextStyle(color: AppTheme.textSecondary),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary.withOpacity(0.7),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Coba lagu lain',
+              style: TextStyle(color: AppTheme.textSecondary),
+            ),
+          ],
+        ),
       ),
     );
   }

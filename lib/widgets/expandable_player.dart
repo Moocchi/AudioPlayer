@@ -116,12 +116,20 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
     );
   }
 
+  bool _isPlayerDragAllowed = false;
+
   void _handleDragStart(DragStartDetails details) {
+    if (_sheetController.value > 0) {
+      _isPlayerDragAllowed = false;
+      return;
+    }
+    _isPlayerDragAllowed = true;
     _dragStartY = details.globalPosition.dy;
     _dragStartValue = _controller.value;
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
+    if (!_isPlayerDragAllowed) return;
     final screenHeight = MediaQuery.of(context).size.height;
     final dragDistance = details.globalPosition.dy - _dragStartY;
     final valueDelta = dragDistance / (screenHeight - _miniPlayerHeight);
@@ -130,6 +138,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
   }
 
   void _handleDragEnd(DragEndDetails details) {
+    if (!_isPlayerDragAllowed) return;
     final velocity = details.primaryVelocity ?? 0;
     
     // If swiping down fast enough, close it.
@@ -704,9 +713,20 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
                           child: IgnorePointer(
                             child: Container(
                               decoration: BoxDecoration(
+                                color: AppTheme.background,
                                 borderRadius: BorderRadius.circular(
                                   currentRadius,
                                 ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _shadowColor.withOpacity(
+                                      lerpDouble(0.45, 0.0, t)!.clamp(0.0, 1.0),
+                                    ),
+                                    blurRadius: lerpDouble(24, 0, t)!,
+                                    offset: Offset(0, lerpDouble(12, 0, t)!),
+                                    spreadRadius: lerpDouble(4, 0, t)!,
+                                  ),
+                                ],
                               ),
                               clipBehavior: Clip.antiAlias,
                               child: CachedNetworkImage(

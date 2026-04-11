@@ -15,4 +15,13 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+
+    <!-- Custom theme for UCropActivity to handle Android 15 Edge-to-Edge -->
+    <style name="UCropTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:fitsSystemWindows">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">#FF6B35</item>
+        <!-- The padding from fitsSystemWindows reveals the window background, so we set it to orange -->
+        <item name="android:windowBackground">#FF6B35</item>
+    </style>
 </resources>
