@@ -343,11 +343,21 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, Playb
                 android.util.Log.d("ExoPlayer", "✅ File source prepared: $url")
             } else {
                 // For HTTP URLs (including localhost manifest serving)
+                val defaultHeaders = mapOf(
+                    "Origin" to "https://listen.tidal.com",
+                    "Referer" to "https://listen.tidal.com/",
+                    "Accept" to "*/*",
+                    "Accept-Encoding" to "identity",
+                    "Sec-Fetch-Dest" to "audio",
+                    "Sec-Fetch-Mode" to "cors",
+                    "Sec-Fetch-Site" to "cross-site"
+                )
                 val httpDataSourceFactory = DefaultHttpDataSource.Factory()
                     .setAllowCrossProtocolRedirects(true)
                     .setConnectTimeoutMs(30000)
                     .setReadTimeoutMs(30000)
-                    .setUserAgent("ExoPlayer-HiRes/1.0 (Tidal Compatible)")
+                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .setDefaultRequestProperties(defaultHeaders)
 
                 // Configure CacheKeyFactory to build a stable cache key
                 // Ignore dynamic query parameters token/signatures in Katze API segments
@@ -555,7 +565,41 @@ class ExoPlayerPlugin : FlutterPlugin, MethodCallHandler, Player.Listener, Playb
 
 
     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-        sendEvent("error", mapOf("message" to error.message))
+        // Extract detailed info for HTTP errors (especially 403)
+        val cause = error.cause
+        if (cause is androidx.media3.exoplayer.ExoPlaybackException) {
+            val sourceCause = cause.cause
+            if (sourceCause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                val failedUrl = sourceCause.dataSpec.uri.toString()
+                val responseCode = sourceCause.responseCode
+                val responseHeaders = sourceCause.headerFields?.entries?.take(5)?.joinToString("; ") { "${it.key}=${it.value}" } ?: "none"
+                android.util.Log.e("ExoPlayer", "❌ HTTP $responseCode ERROR!")
+                android.util.Log.e("ExoPlayer", "❌ Failed URL: $failedUrl")
+                android.util.Log.e("ExoPlayer", "❌ Response headers: $responseHeaders")
+                sendEvent("error", mapOf(
+                    "message" to "HTTP $responseCode: $failedUrl",
+                    "url" to failedUrl,
+                    "responseCode" to responseCode
+                ))
+                return
+            }
+        }
+        // Also try direct cause chain
+        var currentCause: Throwable? = error
+        while (currentCause != null) {
+            if (currentCause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                val failedUrl = currentCause.dataSpec.uri.toString()
+                android.util.Log.e("ExoPlayer", "❌ HTTP ${currentCause.responseCode} for URL: $failedUrl")
+                sendEvent("error", mapOf(
+                    "message" to "HTTP ${currentCause.responseCode}: $failedUrl",
+                    "url" to failedUrl,
+                    "responseCode" to currentCause.responseCode
+                ))
+                return
+            }
+            currentCause = currentCause.cause
+        }
+        sendEvent("error", mapOf("message" to (error.message ?: "Unknown error")))
     }
 
     private fun sendEvent(event: String, data: Map<String, Any?>) {

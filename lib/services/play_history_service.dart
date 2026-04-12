@@ -151,7 +151,7 @@ class PlayHistoryService extends ChangeNotifier {
       final countJson = prefs.getString('${_historyKey}_counts');
       if (countJson != null) {
         final Map<String, dynamic> decoded = json.decode(countJson);
-        _playCount = decoded.map((k, v) => MapEntry(k, v as int));
+        _playCount = decoded.map((k, v) => MapEntry(k, (v as num?)?.toInt() ?? 0));
       }
 
       // Load song data
@@ -292,6 +292,8 @@ class PlayHistoryService extends ChangeNotifier {
   Future<void> clearHistory() async {
     _playCount.clear();
     _frequentSongs.clear();
+    _sessionFrequentSongs.clear();
+    _shuffledSongs.clear();
     _recentAlbums.clear();
     _recentSongs.clear();
 

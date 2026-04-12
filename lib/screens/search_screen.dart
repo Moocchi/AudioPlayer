@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
@@ -22,9 +24,13 @@ class SearchScreen extends StatefulWidget {
 class SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
 
-  /// Returns true if back was handled (search cleared), false if not
+  /// Returns true if back was handled (search cleared or unfocused), false if not
   bool handleBack() {
-    if (_hasSearched) {
+    if (_searchFocus.hasFocus) {
+      _searchFocus.unfocus();
+      return true;
+    }
+    if (_hasSearched || _searchController.text.isNotEmpty) {
       _searchController.clear();
       setState(() {
         _songs = [];
@@ -83,6 +89,11 @@ class SearchScreenState extends State<SearchScreen> {
     setState(() {});
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_historyKey, _searchHistory);
+    Fluttertoast.showToast(
+      msg: '"$query" dihapus dari riwayat penelusuran.',
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+    );
   }
 
   void _showDeleteHistoryDialog(String query) {
@@ -120,6 +131,11 @@ class SearchScreenState extends State<SearchScreen> {
     setState(() {});
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_historyKey);
+    Fluttertoast.showToast(
+      msg: 'Riwayat penelusuran dihapus.',
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+    );
   }
 
   Future<void> _search(String query) async {
@@ -180,9 +196,7 @@ class SearchScreenState extends State<SearchScreen> {
             // Content
             Expanded(
               child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: AppTheme.primary),
-                    )
+                  ? _buildSkeleton()
                   : _hasSearched
                   ? _buildSearchResults()
                   : _buildSearchHistory(),
@@ -218,6 +232,7 @@ class SearchScreenState extends State<SearchScreen> {
               child: TextField(
                 controller: _searchController,
                 focusNode: _searchFocus,
+                onTapOutside: (event) => FocusManager.instance.primaryFocus?.unfocus(),
                 style: const TextStyle(
                   color: AppTheme.textPrimary,
                   fontSize: 16,
@@ -319,6 +334,7 @@ class SearchScreenState extends State<SearchScreen> {
   Widget _buildRecentSongItem(Song song, int index) {
     return _ScaleButton(
       onTap: () {
+        FocusScope.of(context).unfocus(); // Dismiss keyboard
         // Queue only this song
         _audio.playQueue([song], 0, userInitiated: true);
         _history.recordPlay(song);
@@ -330,6 +346,11 @@ class SearchScreenState extends State<SearchScreen> {
           song,
           onRemoveFromHistory: () {
             _history.removeRecentSong(song.id);
+            Fluttertoast.showToast(
+              msg: '"${song.title}" dihapus dari riwayat diputar.',
+              toastLength: Toast.LENGTH_SHORT,
+              gravity: ToastGravity.BOTTOM,
+            );
           },
         );
       },
@@ -526,6 +547,59 @@ class SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSkeleton() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: 8,
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Shimmer.fromColors(
+            baseColor: AppTheme.surface,
+            highlightColor: AppTheme.divider,
+            child: Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 150,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

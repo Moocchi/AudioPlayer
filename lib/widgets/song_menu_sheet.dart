@@ -25,6 +25,7 @@ class SongMenuSheet extends StatelessWidget {
     String? playlistId,
     VoidCallback? onRemoveFromHistory,
   }) {
+    FocusManager.instance.primaryFocus?.unfocus();
     return showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -125,11 +126,9 @@ class SongMenuSheet extends StatelessWidget {
               ExoPlayerService().addToQueueNext(song);
               Navigator.pop(context);
               Fluttertoast.showToast(
-                msg: '"${song.title}" akan diputar setelah ini',
+                msg: '"${song.title}" akan diputar setelah ini!',
                 toastLength: Toast.LENGTH_SHORT,
                 gravity: ToastGravity.BOTTOM,
-                backgroundColor: Colors.black54,
-                textColor: Colors.white,
               );
             },
           ),
@@ -143,11 +142,9 @@ class SongMenuSheet extends StatelessWidget {
               ExoPlayerService().addToQueueEnd(song);
               Navigator.pop(context);
               Fluttertoast.showToast(
-                msg: '"${song.title}" ditambahkan ke antrean',
+                msg: '"${song.title}" berhasil masuk antrean.',
                 toastLength: Toast.LENGTH_SHORT,
                 gravity: ToastGravity.BOTTOM,
-                backgroundColor: Colors.black54,
-                textColor: Colors.white,
               );
             },
           ),
@@ -183,8 +180,6 @@ class SongMenuSheet extends StatelessWidget {
                   msg: '"${song.title}" dihapus dari playlist',
                   toastLength: Toast.LENGTH_SHORT,
                   gravity: ToastGravity.BOTTOM,
-                  backgroundColor: Colors.black54,
-                  textColor: Colors.white,
                 );
               },
             ),

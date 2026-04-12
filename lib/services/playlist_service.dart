@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/playlist.dart';
@@ -62,6 +63,13 @@ class PlaylistService extends ChangeNotifier {
     notifyListeners();
     await _savePlaylists();
     debugPrint('✅ Created playlist: $name');
+    
+    Fluttertoast.showToast(
+      msg: "Playlist '$name' berhasil dibuat!",
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+    );
+    
     return playlist;
   }
 
@@ -91,6 +99,12 @@ class PlaylistService extends ChangeNotifier {
     _playlists.removeWhere((p) => p.id == playlistId);
     notifyListeners();
     await _savePlaylists();
+    
+    Fluttertoast.showToast(
+      msg: "Playlist telah dihapus.",
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+    );
   }
 
   /// Rename playlist
@@ -100,6 +114,12 @@ class PlaylistService extends ChangeNotifier {
       _playlists[index] = _playlists[index].copyWith(name: newName);
       notifyListeners();
       await _savePlaylists();
+      
+      Fluttertoast.showToast(
+        msg: "Playlist diperbarui menjadi '$newName'.",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
     }
   }
 

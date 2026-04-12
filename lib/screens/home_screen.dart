@@ -34,30 +34,38 @@ class _HomeScreenState extends State<HomeScreen> {
       GlobalKey<NavigatorState>();
   final GlobalKey<SearchScreenState> _searchKey =
       GlobalKey<SearchScreenState>();
+  final GlobalKey<_HomeContentState> _homeContentKey =
+      GlobalKey<_HomeContentState>();
 
-  late final List<Widget> _screens = [
-    const _HomeContent(),
-    SearchScreen(key: _searchKey),
-    Navigator(
-      key: _collectionNavKey,
-      onGenerateRoute: (settings) {
-        return MaterialPageRoute(
-          builder: (context) => const CollectionScreen(),
-        );
-      },
-    ),
-    const SettingsScreen(),
-  ];
+  late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    _screens = [
+      _HomeContent(key: _homeContentKey),
+      SearchScreen(key: _searchKey),
+      Navigator(
+        key: _collectionNavKey,
+        onGenerateRoute: (settings) {
+          return MaterialPageRoute(
+            builder: (context) => const CollectionScreen(),
+          );
+        },
+      ),
+      const SettingsScreen(),
+    ];
+
     _pageController = PageController(initialPage: _currentIndex);
 
     // Auto-expand player when user taps a song (immediate, not on song change)
     final audio = ExoPlayerService();
     audio.shouldExpandPlayer.addListener(() {
-      _playerKey.currentState?.expand();
+      if (audio.shouldExpandPlayer.value > 0) {
+        _playerKey.currentState?.expand();
+      } else if (audio.shouldExpandPlayer.value < 0) {
+        _playerKey.currentState?.collapse();
+      }
     });
   }
 
@@ -123,7 +131,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: _pageController,
                 physics: const BouncingScrollPhysics(),
                 onPageChanged: (index) {
-                  setState(() => _currentIndex = index);
+                  if (mounted) {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    setState(() => _currentIndex = index);
+                    // Auto-refresh home when navigating back to it
+                    if (index == 0) {
+                      _homeContentKey.currentState?.refresh();
+                    }
+                  }
                 },
                 children: _screens,
               ),
@@ -216,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 // Home Content Widget
 class _HomeContent extends StatefulWidget {
-  const _HomeContent();
+  const _HomeContent({super.key});
 
   @override
   State<_HomeContent> createState() => _HomeContentState();
@@ -268,6 +283,9 @@ class _HomeContentState extends State<_HomeContent> {
     if (mounted) setState(() {});
   }
 
+  /// Called by parent HomeScreen when switching back to home tab
+  Future<void> refresh() => _initHistory();
+
   void _playSong(Song song, int index, List<Song> songs) {
     // Queue only the selected song
     _audio.playQueue([song], 0, userInitiated: true);
@@ -292,25 +310,31 @@ class _HomeContentState extends State<_HomeContent> {
                 builder: (context, _) {
                   // NO registerSongs calls here anymore!
 
-                  return SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Quick Picks - frequently played songs
-                        if (_history.frequentSongs.isNotEmpty)
-                          _buildQuickPicks(),
+                  return RefreshIndicator(
+                    onRefresh: _initHistory,
+                    color: AppTheme.primary,
+                    backgroundColor: AppTheme.surface,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Quick Picks - frequently played songs
+                          if (_history.frequentSongs.isNotEmpty)
+                            _buildQuickPicks(),
 
-                        // Quick Shortcuts - random songs grid
-                        if (_history.shuffledSongs.isNotEmpty)
-                          _buildQuickShortcuts(),
+                          // Quick Shortcuts - random songs grid
+                          if (_history.shuffledSongs.isNotEmpty)
+                            _buildQuickShortcuts(),
 
-                        // Empty state if no history
-                        if (_history.frequentSongs.isEmpty &&
-                            _history.shuffledSongs.isEmpty)
-                          _buildEmptyState(),
+                          // Empty state if no history
+                          if (_history.frequentSongs.isEmpty &&
+                              _history.shuffledSongs.isEmpty)
+                            _buildEmptyState(),
 
-                        const SizedBox(height: 100), // Space for mini player
-                      ],
+                          const SizedBox(height: 100), // Space for mini player
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -367,7 +391,9 @@ class _HomeContentState extends State<_HomeContent> {
             controller: _quickPicksPageController,
             itemCount: totalPages,
             onPageChanged: (page) {
-              setState(() => _currentQuickPicksPage = page);
+              if (mounted) {
+                setState(() => _currentQuickPicksPage = page);
+              }
             },
             itemBuilder: (context, pageIndex) {
               return Padding(
@@ -602,7 +628,9 @@ class _HomeContentState extends State<_HomeContent> {
             controller: _albumPageController,
             itemCount: totalPages,
             onPageChanged: (page) {
-              setState(() => _currentAlbumPage = page);
+              if (mounted) {
+                setState(() => _currentAlbumPage = page);
+              }
             },
             itemBuilder: (context, pageIndex) {
               final startIndex = pageIndex * 9;

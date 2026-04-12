@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 import 'dart:async';
 import '../../services/exoplayer_service.dart';
 import '../../services/lyrics_service.dart';
@@ -117,7 +118,16 @@ class _PlayerLyricsViewState extends State<PlayerLyricsView> {
   }
 
   void _scrollToLine(int index) {
-    if (!_scrollController.hasClients || index < 0) return;
+    if (!_scrollController.hasClients) return;
+
+    if (index < 0) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
 
     // Each line is roughly 56px (padding + text), center it
     final targetOffset = (index * 56.0) - 120.0;
@@ -264,29 +274,34 @@ class _PlayerLyricsViewState extends State<PlayerLyricsView> {
   }
 
   Widget _buildLoadingState() {
-    return Center(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 32,
-              height: 32,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                color: AppTheme.primary.withOpacity(0.7),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      child: Shimmer.fromColors(
+        baseColor: AppTheme.surface,
+        highlightColor: AppTheme.divider,
+        child: ListView.builder(
+          itemCount: 12,
+          itemBuilder: (context, index) {
+            double widthFactor;
+            switch (index % 4) {
+              case 0: widthFactor = 0.8; break;
+              case 1: widthFactor = 0.6; break;
+              case 2: widthFactor = 0.9; break;
+              default: widthFactor = 0.5; break;
+            }
+            
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Container(
+                width: MediaQuery.of(context).size.width * widthFactor,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Mencari lirik...',
-              style: TextStyle(
-                fontSize: 15,
-                color: AppTheme.textSecondary,
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

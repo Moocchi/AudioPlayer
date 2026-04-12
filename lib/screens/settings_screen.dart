@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/settings_service.dart';
+import '../services/play_history_service.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'cached_songs_screen.dart';
-
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -82,6 +83,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // Auto-Hide Overlay Setting (Grid mode only)
         _buildAutoHideToggle(),
 
+        const SizedBox(height: 24),
+
+        // Data Section
+        Text(
+          'Data & History',
+          style: AppTheme.caption.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        
+        _buildClearHistoryEntry(),
+
         const SizedBox(height: 100), // Space for mini player
       ],
     );
@@ -127,6 +143,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const Icon(Icons.chevron_right, color: AppTheme.textSecondary, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClearHistoryEntry() {
+    return Material(
+      color: AppTheme.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: AppTheme.surface,
+              title: const Text('Clear History?', style: AppTheme.heading2),
+              content: const Text(
+                'This will reset your Quick Picks and Quick Shortcuts on the Home screen. This action cannot be undone.',
+                style: AppTheme.body,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    PlayHistoryService().clearHistory();
+                    Navigator.pop(ctx);
+                    Fluttertoast.showToast(
+                      msg: 'Home history cleared successfully!',
+                      toastLength: Toast.LENGTH_SHORT,
+                      gravity: ToastGravity.BOTTOM,
+                    );
+                  },
+                  child: Text('Clear', style: TextStyle(color: AppTheme.primary)),
+                ),
+              ],
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.divider, width: 0.5),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent, size: 20),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Clear Home History', style: AppTheme.body),
+                    SizedBox(height: 2),
+                    Text('Reset quick picks and shortcuts', style: AppTheme.caption),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

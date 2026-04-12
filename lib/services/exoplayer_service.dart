@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -288,6 +289,10 @@ class ExoPlayerService extends ChangeNotifier {
   // Lyrics prefetch state
   final LyricsService _lyricsService = LyricsService();
   final Set<String> _lyricsPrefetchInProgress = <String>{};
+
+  // 403 auto-retry state
+  int _cdnRetryCount = 0;
+  static const int _maxCdnRetries = 2;
   String? _lastPrefetchedLyricsSongId;
 
   // Getters
@@ -539,10 +544,18 @@ class ExoPlayerService extends ChangeNotifier {
         break;
 
       case 'error':
-        final error = eventMap['error']?.toString();
-        debugPrint('❌ ExoPlayer error: $error');
+        final errorMsg = eventMap['message']?.toString() ?? '';
+        debugPrint('❌ ExoPlayer error: $errorMsg');
+        _cdnRetryCount = 0;
         _isLoading = false;
-        _loadingStatus = 'Error: $error';
+        _loadingStatus = 'Error: $errorMsg';
+        
+        Fluttertoast.showToast(
+          msg: "Ups! Terjadi kesalahan saat memutar lagu.",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+        
         notifyListeners();
         break;
 
@@ -681,6 +694,19 @@ class ExoPlayerService extends ChangeNotifier {
     }
   }
 
+  /// Clear stale API cache for a song so next play gets a fresh CDN token
+  void _clearApiCache(Song song) {
+    SharedPreferences.getInstance().then((prefs) {
+      final hiResKey = 'api_cache_${song.id}_HI_RES_LOSSLESS';
+      final losslessKey = 'api_cache_${song.id}_LOSSLESS';
+      prefs.remove(hiResKey);
+      prefs.remove('${hiResKey}_ts');
+      prefs.remove(losslessKey);
+      prefs.remove('${losslessKey}_ts');
+      debugPrint('🗑️ Cleared stale API cache for: ${song.title}');
+    });
+  }
+
   /// Reset position to beginning with smooth animation support
   void _resetToBeginning() {
     _isPlaying = false;
@@ -757,8 +783,12 @@ class ExoPlayerService extends ChangeNotifier {
       final isAudioFullyCached = prefs.getBool('audio_full_cached_${song.id}') ?? false;
       if (isAudioFullyCached) {
         final cachedBody = prefs.getString(prefCacheKey);
-        if (cachedBody != null && cachedBody.isNotEmpty) {
-          debugPrint('⚡ Cache-first: Skipping API, using local cache for ${song.title}');
+        final cacheTimestamp = prefs.getInt('${prefCacheKey}_ts') ?? 0;
+        final cacheAgeMs = DateTime.now().millisecondsSinceEpoch - cacheTimestamp;
+        final isCacheFresh = cacheAgeMs < 30 * 60 * 1000; // 30 minutes
+
+        if (cachedBody != null && cachedBody.isNotEmpty && isCacheFresh) {
+          debugPrint('⚡ Cache-first: Skipping API, using local cache for ${song.title} (age: ${cacheAgeMs ~/ 1000}s)');
           _isLoading = true;
           _loadingStatus = 'Loading from cache...';
           notifyListeners();
@@ -795,6 +825,8 @@ class ExoPlayerService extends ChangeNotifier {
           }
           // Fallthrough: cached data invalid, continue to API call below
           debugPrint('⚠️ Cache-first: Stored response invalid, falling back to API');
+        } else if (cachedBody != null && !isCacheFresh) {
+          debugPrint('⏰ Cache-first: API cache expired (age: ${cacheAgeMs ~/ 1000}s), fetching fresh token from API');
         }
       }
 
@@ -802,8 +834,10 @@ class ExoPlayerService extends ChangeNotifier {
       debugPrint('🌐 API Request for: ${song.title}');
 
       // Get manifest from katze API with retry logic
+      // Add cache-busting parameter to prevent API server from returning stale cached CDN tokens
+      final cacheBuster = DateTime.now().millisecondsSinceEpoch;
       var url = Uri.parse(
-        'https://katze.qqdl.site/track/?id=${song.id}&quality=$quality',
+        'https://katze.qqdl.site/track/?id=${song.id}&quality=$quality&_t=$cacheBuster',
       );
       debugPrint('🌐 API Request: $url');
 
@@ -830,7 +864,11 @@ class ExoPlayerService extends ChangeNotifier {
           }
 
           res = await http
-              .get(url)
+              .get(url, headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+              })
               .timeout(
                 const Duration(seconds: 15),
                 onTimeout: () => throw Exception('Request timeout'),
@@ -856,6 +894,15 @@ class ExoPlayerService extends ChangeNotifier {
           }
         } catch (e) {
           lastError = e is Exception ? e : Exception(e.toString());
+          
+          if (attempt == maxRetries - 1) {
+             Fluttertoast.showToast(
+              msg: "Gagal memuat lagu. Periksa koneksi internet Anda.",
+              toastLength: Toast.LENGTH_SHORT,
+              gravity: ToastGravity.BOTTOM,
+            );
+          }
+
           if (attempt < maxRetries - 1) {
             debugPrint('⚠️ Request failed: $e, will retry...');
           }
@@ -877,8 +924,9 @@ class ExoPlayerService extends ChangeNotifier {
         }
       } else {
         responseBody = res.body;
-        // Save to cache for future offline play
+        // Save to cache for future offline play, with timestamp
         await prefs.setString(prefCacheKey, responseBody);
+        await prefs.setInt('${prefCacheKey}_ts', DateTime.now().millisecondsSinceEpoch);
       }
 
       // RACE CONDITION CHECK: If another song started while we were waiting, ABORT.
@@ -1082,6 +1130,7 @@ class ExoPlayerService extends ChangeNotifier {
       _isPlaying = true;
       _isLoading = false;
       _loadingStatus = '';
+      _cdnRetryCount = 0; // Reset retry counter on successful play
       notifyListeners();
 
       await play();
@@ -1331,6 +1380,13 @@ class ExoPlayerService extends ChangeNotifier {
     _duration = Duration.zero;
     _isLoading = false;
     _resetShuffleState(keepCurrent: false);
+    
+    Fluttertoast.showToast(
+      msg: "Antrean berhasil dikosongkan.",
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+    );
+    
     notifyListeners();
   }
 
@@ -1478,6 +1534,11 @@ class ExoPlayerService extends ChangeNotifier {
 
     if (nextIndex == null || nextIndex < 0 || nextIndex >= _queue.length) {
       debugPrint('⚠️ No next song for current mode');
+      Fluttertoast.showToast(
+        msg: "Antrean selesai. Mencapai akhir daftar putar.",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
       return;
     }
 
@@ -1542,6 +1603,11 @@ class ExoPlayerService extends ChangeNotifier {
     } else {
       // At start in non-loop mode: restart current song.
       debugPrint('⏮️ At start, restarting current song');
+      Fluttertoast.showToast(
+        msg: "Mencapai lagu pertama dalam antrean.",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
       await seekTo(Duration.zero);
     }
   }
@@ -1592,17 +1658,28 @@ class ExoPlayerService extends ChangeNotifier {
       // End of Song Mode
       _stopAfterCurrentSong = true;
       debugPrint('⏰ Sleep Timer: Set to End of Song');
+      Fluttertoast.showToast(
+        msg: "Timer tidur diatur untuk berhenti setelah lagu ini.",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
     } else {
       // Countdown Mode
-      int minutes = (sliderValue * 5).toInt();
+      int totalMinutes = (sliderValue * 5).toInt();
       if (sliderValue == 0.33) {
         // Debug: 20 seconds
         _sleepTimerDuration = const Duration(seconds: 20);
         debugPrint('⏰ Sleep Timer: Set to 20 seconds (Debug)');
       } else {
-        _sleepTimerDuration = Duration(minutes: minutes);
-        debugPrint('⏰ Sleep Timer: Set to $minutes minutes');
+        _sleepTimerDuration = Duration(minutes: totalMinutes);
+        debugPrint('⏰ Sleep Timer: Set to $totalMinutes minutes');
       }
+
+      Fluttertoast.showToast(
+        msg: "Timer tidur diatur untuk $totalMinutes menit.",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
 
       _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
         if (_sleepTimerDuration == null) {

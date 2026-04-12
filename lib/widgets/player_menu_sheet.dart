@@ -13,6 +13,7 @@ class PlayerMenuSheet extends StatelessWidget {
   const PlayerMenuSheet({super.key, required this.song});
 
   static Future<void> show(BuildContext context, Song song) {
+    FocusManager.instance.primaryFocus?.unfocus();
     return showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -215,8 +216,6 @@ class PlayerMenuSheet extends StatelessWidget {
                 msg: 'Antrean dihapus',
                 toastLength: Toast.LENGTH_SHORT,
                 gravity: ToastGravity.BOTTOM,
-                backgroundColor: Colors.black54,
-                textColor: Colors.white,
               );
             },
             borderRadius: BorderRadius.circular(12),

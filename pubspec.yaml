@@ -48,6 +48,7 @@ dependencies:
   fluttertoast: ^8.2.2
   reorderable_grid_view: ^2.2.8
   flutter_reorderable_grid_view: ^5.5.2
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:

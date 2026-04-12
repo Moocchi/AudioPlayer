@@ -41,6 +41,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
   }
 
   void expand() {
+    FocusManager.instance.primaryFocus?.unfocus();
     _controller.forward();
   }
 
@@ -577,6 +578,7 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
     const double tabsBarHeight = 66.0; // 50 tabs + 16 padding
 
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Prevent keyboard from resizing the player/tabs
       backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Padding(
@@ -916,8 +918,6 @@ class ExpandablePlayerState extends State<ExpandablePlayer>
                                     '"${song.title}" ditambahkan ke Liked Songs',
                                 toastLength: Toast.LENGTH_SHORT,
                                 gravity: ToastGravity.BOTTOM,
-                                backgroundColor: Colors.black54,
-                                textColor: Colors.white,
                               );
                             }
                           },

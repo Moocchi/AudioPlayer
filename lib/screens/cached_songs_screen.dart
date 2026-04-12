@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import '../services/exoplayer_service.dart';
@@ -167,6 +168,12 @@ class _CachedSongsScreenState extends State<CachedSongsScreen> {
     
     if (mounted) setState(() => _entries.removeAt(index));
     await _refreshTotal();
+    
+    Fluttertoast.showToast(
+      msg: 'Cache "${entry.song.title}" berhasil dihapus.',
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+    );
   }
 
   Future<void> _refreshTotal() async {
@@ -233,6 +240,11 @@ class _CachedSongsScreenState extends State<CachedSongsScreen> {
             }
           }
           await _loadData();
+          Fluttertoast.showToast(
+            msg: 'Semua cache berhasil dihapus.',
+            toastLength: Toast.LENGTH_SHORT,
+            gravity: ToastGravity.BOTTOM,
+          );
         },
       ),
     );
@@ -277,62 +289,84 @@ class _CachedSongsScreenState extends State<CachedSongsScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
-                    onPressed: () => Navigator.pop(context),
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          color: AppTheme.primary,
+          backgroundColor: AppTheme.surface,
+          strokeWidth: 2.5,
+          displacement: 16,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              // ── Header ──────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Cached Songs', style: AppTheme.heading2.copyWith(fontSize: 20)),
+                            if (!_isLoading)
+                              Text(
+                                '${_entries.length} songs · ${_formatBytes(_totalCachedBytes)} used',
+                                style: AppTheme.caption.copyWith(fontSize: 11),
+                              ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.more_vert, color: AppTheme.textPrimary),
+                        onPressed: _showCacheSettings,
+                      ),
+                    ],
                   ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Cached Songs', style: AppTheme.heading2.copyWith(fontSize: 20)),
-                        if (!_isLoading)
-                          Text(
-                            '${_entries.length} songs · ${_formatBytes(_totalCachedBytes)} used',
-                            style: AppTheme.caption.copyWith(fontSize: 11),
-                          ),
-                      ],
+                ),
+              ),
+
+              // ── Storage bar ─────────────────────────────────
+              if (!_isLoading) SliverToBoxAdapter(child: _buildStorageBar()),
+
+              // ── Divider ─────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Divider(color: AppTheme.divider.withOpacity(0.5), height: 1),
+              ),
+
+              // ── Content ─────────────────────────────────────
+              if (_isLoading)
+                const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+                )
+              else if (_entries.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _buildEmptyState(),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.only(bottom: 100, top: 4),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (ctx, i) => _buildSongTile(i),
+                      childCount: _entries.length,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.more_vert, color: AppTheme.textPrimary),
-                    onPressed: _showCacheSettings,
-                  ),
-                ],
-              ),
-            ),
-
-            // Storage bar
-            if (!_isLoading) _buildStorageBar(),
-
-            Divider(color: AppTheme.divider.withOpacity(0.5), height: 1),
-
-            // List
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-                  : _entries.isEmpty
-                      ? _buildEmptyState()
-                      : ListView.builder(
-                          padding: const EdgeInsets.only(bottom: 100, top: 4),
-                          itemCount: _entries.length,
-                          itemBuilder: (ctx, i) => _buildSongTile(i),
-                        ),
-            ),
-          ],
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildStorageBar() {
+
     final limitBytes = _cacheSizeLimit * 1024 * 1024 * 1024;
     final progress = (_totalCachedBytes / limitBytes).clamp(0.0, 1.0);
     // Format: "500 MB / 2 GB" or "1.23 GB / 3 GB"

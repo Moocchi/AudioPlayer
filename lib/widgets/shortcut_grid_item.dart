@@ -22,9 +22,9 @@ class _ShortcutGridItemState extends State<ShortcutGridItem> {
   @override
   Widget build(BuildContext context) {
     return Listener(
-      onPointerDown: (_) => setState(() => _scale = 0.95),
-      onPointerUp: (_) => setState(() => _scale = 1.0),
-      onPointerCancel: (_) => setState(() => _scale = 1.0),
+      onPointerDown: (_) { if (mounted) setState(() => _scale = 0.95); },
+      onPointerUp: (_) { if (mounted) setState(() => _scale = 1.0); },
+      onPointerCancel: (_) { if (mounted) setState(() => _scale = 1.0); },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,

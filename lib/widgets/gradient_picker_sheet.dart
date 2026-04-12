@@ -129,8 +129,6 @@ class _GradientPickerSheetState extends State<GradientPickerSheet> {
           msg: 'Please select 2 colors',
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.black54,
-          textColor: Colors.white,
         );
         return;
       }

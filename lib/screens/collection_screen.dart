@@ -127,6 +127,56 @@ class _CollectionScreenState extends State<CollectionScreen> {
     );
   }
 
+  void _showCreatePlaylistDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Playlist Baru', style: AppTheme.heading2),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: AppTheme.body,
+          maxLength: 25,
+          decoration: InputDecoration(
+            hintText: 'Nama playlist',
+            hintStyle: AppTheme.caption,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onSubmitted: (_) async {
+            if (controller.text.trim().isNotEmpty) {
+              await PlaylistService().createPlaylist(controller.text.trim());
+              if (mounted) Navigator.pop(context);
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Batal',
+              style: TextStyle(color: AppTheme.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.trim().isNotEmpty) {
+                await PlaylistService().createPlaylist(controller.text.trim());
+                if (mounted) Navigator.pop(context);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Buat'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -146,38 +196,49 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           const Text('Collections', style: AppTheme.heading2),
-          IconButton(
-            onPressed: () {
-              setState(() {
-                _isRearrangeMode = !_isRearrangeMode;
-              });
-              if (_isRearrangeMode) {
-                Fluttertoast.showToast(
-                  msg: 'Entering Rearrange mode area',
-                  toastLength: Toast.LENGTH_SHORT,
-                  gravity: ToastGravity.BOTTOM,
-                  backgroundColor: Colors.black54,
-                  textColor: Colors.white,
-                );
-              }
-            },
-            icon: Icon(
-              _isRearrangeMode
-                  ? Icons.check_circle
-                  : Icons.swap_vert_circle_outlined,
-              color: _isRearrangeMode
-                  ? AppTheme.primary
-                  : AppTheme.textSecondary,
-              size: 28,
-            ),
-            tooltip: _isRearrangeMode
-                ? 'Done Rearranging'
-                : 'Rearrange Playlists',
+          Row(
+            children: [
+              // Rearrange button
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    _isRearrangeMode = !_isRearrangeMode;
+                  });
+                  Fluttertoast.showToast(
+                    msg: _isRearrangeMode
+                        ? 'Mode susun ulang aktif. Tahan dan seret untuk memindahkan.'
+                        : 'Susunan playlist disimpan.',
+                    toastLength: Toast.LENGTH_SHORT,
+                    gravity: ToastGravity.BOTTOM,
+                  );
+                },
+                icon: Icon(
+                  _isRearrangeMode
+                      ? Icons.check_circle
+                      : Icons.swap_vert_circle_outlined,
+                  color: _isRearrangeMode
+                      ? AppTheme.primary
+                      : AppTheme.textSecondary,
+                  size: 26,
+                ),
+                tooltip: _isRearrangeMode ? 'Selesai' : 'Susun Ulang',
+              ),
+              // Add playlist button
+              IconButton(
+                onPressed: _showCreatePlaylistDialog,
+                icon: const Icon(
+                  Icons.add_circle_outline_rounded,
+                  color: AppTheme.textSecondary,
+                  size: 26,
+                ),
+                tooltip: 'Buat Playlist Baru',
+              ),
+            ],
           ),
         ],
       ),

@@ -99,8 +99,6 @@ class _PlayerQueueViewState extends State<PlayerQueueView> {
                     msg: '"${song.title}" dipindah ke setelah lagu saat ini',
                     toastLength: Toast.LENGTH_SHORT,
                     gravity: ToastGravity.BOTTOM,
-                    backgroundColor: Colors.black54,
-                    textColor: Colors.white,
                   );
                 },
               ),
@@ -114,8 +112,6 @@ class _PlayerQueueViewState extends State<PlayerQueueView> {
                     msg: '"${song.title}" ditambahkan ke antrean',
                     toastLength: Toast.LENGTH_SHORT,
                     gravity: ToastGravity.BOTTOM,
-                    backgroundColor: Colors.black54,
-                    textColor: Colors.white,
                   );
                 },
               ),
@@ -138,8 +134,6 @@ class _PlayerQueueViewState extends State<PlayerQueueView> {
                     msg: '"${song.title}" dihapus dari antrean',
                     toastLength: Toast.LENGTH_SHORT,
                     gravity: ToastGravity.BOTTOM,
-                    backgroundColor: Colors.black54,
-                    textColor: Colors.white,
                   );
                 },
               ),
@@ -277,8 +271,6 @@ class _PlayerQueueViewState extends State<PlayerQueueView> {
                   msg: '"${song.title}" dihapus dari antrean',
                   toastLength: Toast.LENGTH_SHORT,
                   gravity: ToastGravity.BOTTOM,
-                  backgroundColor: Colors.black54,
-                  textColor: Colors.white,
                 );
               },
               child: InkWell(

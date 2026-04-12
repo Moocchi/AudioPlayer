@@ -41,8 +41,6 @@ class _PlaylistPickerDialogState extends State<PlaylistPickerDialog> {
         msg: 'Nama playlist tidak boleh kosong',
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.black54,
-        textColor: Colors.white,
       );
       return;
     }
@@ -57,8 +55,6 @@ class _PlaylistPickerDialogState extends State<PlaylistPickerDialog> {
           msg: 'Batas playlist tercapai (Maksimal 20)',
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
         );
       }
       return;
@@ -70,11 +66,9 @@ class _PlaylistPickerDialogState extends State<PlaylistPickerDialog> {
       Navigator.pop(context); // Close picker dialog
       Fluttertoast.showToast(
         msg:
-            '"${widget.song.title}" ditambahkan ke playlist "${playlist.name}"',
+            '"${widget.song.title}" berhasil disimpan ke "${playlist.name}"',
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.black54,
-        textColor: Colors.white,
       );
     }
   }
@@ -86,11 +80,9 @@ class _PlaylistPickerDialogState extends State<PlaylistPickerDialog> {
       Navigator.pop(context);
       Fluttertoast.showToast(
         msg:
-            '"${widget.song.title}" ditambahkan ke playlist "${playlist.name}"',
+            '"${widget.song.title}" berhasil disimpan ke "${playlist.name}"',
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.black54,
-        textColor: Colors.white,
       );
     }
   }
